@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rumpetroll - Multiplayer Experiment</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="gameCanvas"></canvas>
+
+  <!-- Overlaid UI elements -->
+  <div class="overlay-top">
+    <input type="text" id="nameInput" placeholder="Enter your name..." maxlength="20">
+  </div>
+
+  <div class="overlay-bottom">
+    <p><strong>Click</strong> to swim, <strong>Right-click</strong> for menu | <strong>Arrow Keys/WASD</strong> to move</p>
+    <p><strong>Cheat:</strong> /food X, /health X, /strength X, /split, /op | Connection: <span id="status" class="connected">Connected</span></p>
+  </div>
+
+  <div id="selectionMenu" class="selection-menu hidden">
+    <div id="selectionCount" class="selection-count">Selected: 0</div>
+    <div class="menu-item" id="upgradeBtn">Upgrade</div>
+    <div class="menu-item hidden" id="supportBtn">Support</div>
+    <div class="menu-item hidden" id="hibernateBtn">Hibernate</div>
+  </div>
+
+  <div id="creatureList" class="creature-list"></div>
+
+  <div id="statsDisplay" class="stats-display">
+    <div>Health: <span id="healthStat">100</span></div>
+    <div>Strength: <span id="strengthStat">50</span></div>
+    <div>Food: <span id="foodStat">0</span></div>
+  </div>
+
+  <div id="deathScreen" class="death-screen hidden">
+    <h1>You Died</h1>
+    <button id="restartBtn">Restart</button>
+  </div>
+
+  <!-- Upgrade Menu -->
+  <div id="upgradeMenu" class="upgrade-menu hidden">
+    <div class="upgrade-container">
+      <button class="upgrade-close-btn" id="upgradeCloseBtn">×</button>
+
+      <div class="upgrade-content">
+        <!-- Left Side: Upgrade Tree -->
+        <div class="upgrade-section upgrade-tree-section">
+          <h2>Upgrade Tree</h2>
+          <div class="upgrade-tree">
+            <div class="upgrade-option">
+              <div class="upgrade-option-header">
+                <h3>Health</h3>
+                <span class="upgrade-level">Level: <span id="healthUpgradeLevel">0</span></span>
+              </div>
+              <p class="upgrade-description">Increase maximum health by 20</p>
+              <div class="upgrade-cost">Cost: <span id="healthUpgradeCost">5</span> food</div>
+              <button class="upgrade-buy-btn" id="buyHealthBtn">Upgrade Health</button>
+            </div>
+
+            <div class="upgrade-option">
+              <div class="upgrade-option-header">
+                <h3>Strength</h3>
+                <span class="upgrade-level">Level: <span id="strengthUpgradeLevel">0</span></span>
+              </div>
+              <p class="upgrade-description">Increase attack damage by 10</p>
+              <div class="upgrade-cost">Cost: <span id="strengthUpgradeCost">5</span> food</div>
+              <button class="upgrade-buy-btn" id="buyStrengthBtn">Upgrade Strength</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Side: Transform Options -->
+        <div class="upgrade-section transform-section">
+          <h2>Transform</h2>
+          <div class="transform-options">
+            <div class="transform-option">
+              <h3>Cell</h3>
+              <p class="transform-description">Transform into a larger, more powerful cell with hair-like appendages</p>
+              <div class="transform-stats">
+                <div>• Larger size</div>
+                <div>• Better health regeneration</div>
+                <div>• Can support other creatures</div>
+              </div>
+              <div class="transform-cost">Cost: <span>5</span> food</div>
+              <button class="transform-btn" id="transformCellBtn">Transform to Cell</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
