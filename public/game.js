@@ -4,7 +4,6 @@ const ctx = canvas.getContext('2d');
 const statusEl = document.getElementById('status');
 const nameInput = document.getElementById('nameInput');
 const selectionMenu = document.getElementById('selectionMenu');
-const selectionCount = document.getElementById('selectionCount');
 const deathScreen = document.getElementById('deathScreen');
 const upgradeBtn = document.getElementById('upgradeBtn');
 const supportBtn = document.getElementById('supportBtn');
@@ -150,19 +149,29 @@ let lastSelectedIds = new Set(); // Track selected IDs to detect selection chang
 // Cheat modes
 let invincibilityMode = false; // /op command - allow negative health without dying
 
-// Upgrade system
+// Fog of war - track explored regions (grid-based)
+const FOG_REGION_SIZE = 100; // Size of each fog region (smaller = more granular)
+let exploredRegions = new Set(); // Set of "x,y" region keys
+
+// Upgrade system - 5 levels each
+const MAX_UPGRADE_LEVEL = 5;
 let healthUpgradeLevel = 0;
 let strengthUpgradeLevel = 0;
-const BASE_UPGRADE_COST = 5;
-const HEALTH_PER_UPGRADE = 20;
-const STRENGTH_PER_UPGRADE = 10;
+
+// Upgrade costs per level [1, 2, 3, 4, 5]
+const HEALTH_UPGRADE_COSTS = [3, 6, 12, 20, 35];
+const STRENGTH_UPGRADE_COSTS = [3, 6, 12, 20, 35];
+
+// Bonuses per level (cumulative)
+const HEALTH_BONUSES = [25, 55, 95, 145, 200]; // +25, +30, +40, +50, +55
+const STRENGTH_BONUSES = [8, 18, 32, 50, 75];  // +8, +10, +14, +18, +25
 
 // Food capacity
 const TADPOLE_FOOD_CAPACITY = 30;
 const CELL_FOOD_CAPACITY = 50;
 
 // Hibernation
-const HIBERNATION_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
+const HIBERNATION_DURATION = 1 * 60 * 1000; // 1 minute for testing
 
 // Camera system
 let camera = {
@@ -178,9 +187,9 @@ let attackTarget = null;
 
 // Constants
 const INTERPOLATION_FACTOR = 0.2;
-const MOVE_SPEED = 0.03;
-const NPC_MOVE_SPEED = 0.015; // 2x slower
-const FRICTION = 0.98;
+const MOVE_SPEED = 0.06; // Reduced top speed by 40%
+const NPC_MOVE_SPEED = 0.03; // 2x slower
+const FRICTION = 0.988; // Balanced: quick accel, natural gliding
 const CAMERA_SMOOTHING = 0.1;
 const ARRIVAL_THRESHOLD = 30; // ~1.5 tadpole lengths - comfortable arrival distance
 const TAIL_SEGMENTS = 8;
@@ -193,18 +202,25 @@ const TADPOLE_RADIUS = 9; // Player tadpoles - smaller
 const NPC_TADPOLE_RADIUS = 11.2; // NPCs are bigger
 const CELL_RADIUS = 30; // Player cells
 const NPC_CELL_RADIUS = 40; // NPC cells are bigger than player cells
-const MAX_HEALTH = 100;
-const NPC_MAX_HEALTH = 150; // NPCs have 1.5x more health than players
-const HEALTH_REGEN_RATE = MAX_HEALTH / (2 * 60 * 60); // Full health in 2 minutes
-const NPC_HEALTH_REGEN_RATE = NPC_MAX_HEALTH / (2 * 60 * 60); // NPCs regenerate proportionally
-const ATTACK_DAMAGE = 50; // 2 hits to kill (100 health / 50 damage)
-const ATTACK_RANGE = 100; // Large enough to attack before collision pushes apart
-const TADPOLE_ATTACK_COOLDOWN = 1000; // ms - tadpoles attack once per second
-const CELL_ATTACK_COOLDOWN = 1500; // ms - cells attack once per 1.5 seconds
-const NPC_ATTACK_COOLDOWN = 1500; // ms - NPCs attack cooldown
-const ATTACK_LUNGE_DISTANCE = 15; // How far to lunge forward when attacking
-const ATTACK_LUNGE_DURATION = 150; // ms - how long the lunge lasts
-const CELL_DAMAGE_RESISTANCE = 0.5; // Take half damage
+// Combat stats - Base values (balanced for close vanilla fights)
+const MAX_HEALTH = 80; // Player base health
+const NPC_TADPOLE_HEALTH = 70; // NPC tadpoles - slightly tankier
+const NPC_CELL_HEALTH = 200; // NPC cells - very tanky
+const NPC_MAX_HEALTH = 100; // Default NPC health (used for generic NPCs)
+const HEALTH_REGEN_RATE = 0.02; // HP per frame (~1.2 HP/sec at 60fps)
+const NPC_HEALTH_REGEN_RATE = 0.015; // NPCs regen a bit faster
+
+// Attack stats - vanilla fights are close, upgrades make you strong
+const ATTACK_DAMAGE = 18; // Base player damage - fights take 4 hits
+const NPC_TADPOLE_DAMAGE = 18; // NPC tadpoles hit equally hard!
+const NPC_CELL_DAMAGE = 30; // NPC cells hit harder
+const ATTACK_RANGE = 80; // Tighter attack range
+const TADPOLE_ATTACK_COOLDOWN = 650; // ms - slightly slower player attacks
+const CELL_ATTACK_COOLDOWN = 900; // ms - cells attack slower but harder
+const NPC_ATTACK_COOLDOWN = 700; // ms - NPCs attack faster!
+const ATTACK_LUNGE_DISTANCE = 18; // Slightly longer lunge
+const ATTACK_LUNGE_DURATION = 120; // ms - snappier lunge
+const CELL_DAMAGE_RESISTANCE = 0.6; // Cells take 40% less damage
 
 // Player stats (can be modified with cheat commands)
 let playerHealth = MAX_HEALTH;
@@ -275,6 +291,20 @@ socket.on('init', (data) => {
   selectedTadpoles.clear();
   selectedTadpoles.add(player.id);
   updateSelectionCount();
+
+  // Reinitialize particles and NPCs around the player's spawn position
+  initializeParticles(player.x, player.y);
+
+  // Move NPCs to be around the player's spawn position
+  const npcSpawnRange = 2000;
+  Object.values(npcs).forEach(npc => {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = npcSpawnRange * 0.4 + Math.random() * npcSpawnRange * 0.6;
+    npc.x = player.x + Math.cos(angle) * dist;
+    npc.y = player.y + Math.sin(angle) * dist;
+    npc.renderX = npc.x;
+    npc.renderY = npc.y;
+  });
 });
 
 socket.on('players', (serverPlayers) => {
@@ -358,6 +388,11 @@ socket.on('playerIdle', (data) => {
       npc.wiggleOffset = playerData.wiggleOffset || Math.random() * Math.PI * 2;
       // Clear any tail data from previous tadpole state
       npc.tail = null;
+      // Cell fatigue system
+      npc.chaseEnergy = 100;
+      npc.maxChaseEnergy = 100;
+      npc.isTired = false;
+      npc.tiredStartTime = 0;
     } else {
       // Initialize as tadpole
       initializeTadpole(npc);
@@ -443,58 +478,171 @@ socket.on('foodReset', (serverFood) => {
   console.log('Food reset - now extremely sparse');
 });
 
-// Initialize NPCs (tadpoles and cells)
-function initializeNPCs() {
-  const totalNPCs = 15;
-  const npcCellCount = 3; // 3 cells, 12 tadpoles
-
-  for (let i = 0; i < totalNPCs; i++) {
-    const isCell = i < npcCellCount; // First 3 are cells
-
-    const npc = {
-      id: `npc_${i}`,
-      x: (Math.random() - 0.5) * WORLD_SIZE,
-      y: (Math.random() - 0.5) * WORLD_SIZE,
-      vx: 0,
-      vy: 0,
-      renderX: 0,
-      renderY: 0,
-      color: '#505050', // Darker shade of grey
-      radius: isCell ? NPC_CELL_RADIUS : NPC_TADPOLE_RADIUS,
-      score: 0,
-      name: '',
-      health: NPC_MAX_HEALTH,
-      lastHit: 0,
-      lastAttack: 0,
-      type: isCell ? 'cell' : 'tadpole',
-      moveTarget: null,
-      targetChangeTime: Date.now(),
-      provoked: false // NPCs start peaceful
-    };
+// NPC handlers - NPCs are now server-authoritative
+socket.on('npcs', (serverNpcs) => {
+  // Initial NPC state from server
+  npcs = {};
+  Object.values(serverNpcs).forEach(npcData => {
+    const npc = { ...npcData };
     npc.renderX = npc.x;
     npc.renderY = npc.y;
-
-    if (isCell) {
-      // Cells don't have tails, they're hexagons
+    if (npc.type === 'cell') {
       npc.angle = 0;
       npc.wiggleOffset = Math.random() * Math.PI * 2;
     } else {
       initializeTadpole(npc);
     }
-
     npcs[npc.id] = npc;
-  }
-}
-initializeNPCs();
+  });
+  console.log(`Received ${Object.keys(npcs).length} NPCs from server`);
+});
 
-// Initialize ambient particles
-function initializeParticles() {
-  const particleCount = 500; // Number of particles in the world
+socket.on('npcUpdate', (serverNpcs) => {
+  // Continuous NPC state updates from server
+  Object.values(serverNpcs).forEach(serverNpc => {
+    if (npcs[serverNpc.id]) {
+      // Update existing NPC
+      const npc = npcs[serverNpc.id];
+      npc.x = serverNpc.x;
+      npc.y = serverNpc.y;
+      npc.vx = serverNpc.vx;
+      npc.vy = serverNpc.vy;
+      npc.health = serverNpc.health;
+      npc.provoked = serverNpc.provoked;
+      npc.isTired = serverNpc.isTired;
+      npc.chaseEnergy = serverNpc.chaseEnergy;
+      npc.attackLungeTime = serverNpc.attackLungeTime;
+      npc.attackLungeAngle = serverNpc.attackLungeAngle;
+      // Smooth interpolation for render position
+      if (!npc.renderX) npc.renderX = npc.x;
+      if (!npc.renderY) npc.renderY = npc.y;
+    } else {
+      // New NPC - add it
+      const npc = { ...serverNpc };
+      npc.renderX = npc.x;
+      npc.renderY = npc.y;
+      if (npc.type === 'cell') {
+        npc.angle = 0;
+        npc.wiggleOffset = Math.random() * Math.PI * 2;
+      } else {
+        initializeTadpole(npc);
+      }
+      npcs[npc.id] = npc;
+    }
+  });
+});
+
+socket.on('npcDamaged', (data) => {
+  // Show damage text when NPC is hit
+  if (npcs[data.npcId]) {
+    npcs[data.npcId].health = data.health;
+    spawnDamageText(data.x, data.y, data.damage);
+  }
+});
+
+socket.on('npcDied', (data) => {
+  // Create death effect
+  deathEffects.push({
+    x: data.x,
+    y: data.y,
+    radius: data.radius,
+    startTime: Date.now(),
+    duration: 2000
+  });
+});
+
+socket.on('npcRespawned', (npcData) => {
+  // NPC respawned at new location
+  const npc = npcs[npcData.id];
+  if (npc) {
+    npc.x = npcData.x;
+    npc.y = npcData.y;
+    npc.renderX = npcData.x;
+    npc.renderY = npcData.y;
+    npc.vx = 0;
+    npc.vy = 0;
+    npc.health = npcData.health;
+    npc.provoked = false;
+    if (npc.type === 'cell') {
+      npc.isTired = false;
+      npc.chaseEnergy = npc.maxChaseEnergy || 100;
+    }
+  }
+});
+
+socket.on('npcAttack', (data) => {
+  // NPC attacked us - apply damage to our tadpole
+  if (myTadpoles.length > 0) {
+    // Find the closest tadpole to damage (for multi-tadpole scenarios)
+    const npc = npcs[data.npcId];
+    if (npc) {
+      let closestTad = myTadpoles[0];
+      let closestDist = Infinity;
+      for (let tad of myTadpoles) {
+        const dx = tad.x - npc.x;
+        const dy = tad.y - npc.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < closestDist) {
+          closestDist = dist;
+          closestTad = tad;
+        }
+      }
+      // Apply damage
+      closestTad.health -= data.damage;
+      closestTad.lastHit = Date.now();
+      closestTad.vx += data.knockbackX;
+      closestTad.vy += data.knockbackY;
+      spawnDamageText(closestTad.x, closestTad.y, data.damage);
+    }
+  }
+});
+
+socket.on('worldReset', (data) => {
+  // Clear all other players (keep myTadpoles - our controlled creatures)
+  players = {};
+  // Clear all NPCs and set to new ones
+  npcs = {};
+  if (data.npcs) {
+    Object.values(data.npcs).forEach(npcData => {
+      const npc = { ...npcData };
+      npc.renderX = npc.x;
+      npc.renderY = npc.y;
+      if (npc.type === 'cell') {
+        npc.angle = 0;
+        npc.wiggleOffset = Math.random() * Math.PI * 2;
+        // Cell fatigue system
+        npc.chaseEnergy = 100;
+        npc.maxChaseEnergy = 100;
+        npc.isTired = false;
+        npc.tiredStartTime = 0;
+      } else {
+        initializeTadpole(npc);
+      }
+      npcs[npc.id] = npc;
+    });
+  }
+  // Reset food
+  food = data.food || {};
+  // Reset fog of war - only keep current position explored
+  exploredRegions.clear();
+  // Keep myTadpoles intact - player's creatures are preserved
+  console.log('World reset complete - NPCs and food regenerated, your creatures preserved');
+});
+
+// NPCs are now initialized by the server - no local initialization needed
+
+// Initialize ambient particles around a center point
+function initializeParticles(centerX = 0, centerY = 0) {
+  particles.length = 0; // Clear existing
+  const particleCount = 500; // Number of particles
+  const particleRange = 2500; // Spawn range around center
 
   for (let i = 0; i < particleCount; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Math.random() * particleRange;
     particles.push({
-      x: (Math.random() - 0.5) * WORLD_SIZE,
-      y: (Math.random() - 0.5) * WORLD_SIZE,
+      x: centerX + Math.cos(angle) * dist,
+      y: centerY + Math.sin(angle) * dist,
       radius: 0.5 + Math.random() * 1.5, // 0.5-2 pixels (much smaller than food)
       brightness: 0.3 + Math.random() * 0.7, // Varying shades of white (0.3-1.0)
       driftSpeed: 0.02 + Math.random() * 0.03, // Slow drift speed
@@ -503,7 +651,7 @@ function initializeParticles() {
     });
   }
 }
-initializeParticles();
+initializeParticles(); // Initial spawn around origin, will be recycled when player spawns
 
 // Name input with cheat commands (console-style, execute on Enter)
 nameInput.addEventListener('keydown', (e) => {
@@ -593,6 +741,13 @@ nameInput.addEventListener('keydown', (e) => {
       return;
     }
 
+    if (input === '/reset') {
+      socket.emit('resetWorld');
+      nameInput.value = '';
+      console.log('World reset requested');
+      return;
+    }
+
     // Normal name setting
     if (input && myTadpoles.length > 0) {
       socket.emit('setName', input);
@@ -635,6 +790,25 @@ function updateTail(entity, time) {
     entity.angle = Math.PI;
   }
 
+  // Kick-off detection - track acceleration
+  const prevSpeed = entity.prevSpeed || 0;
+  const acceleration = speed - prevSpeed;
+  entity.prevSpeed = speed;
+
+  // Initialize kick intensity if not set
+  if (entity.kickIntensity === undefined) entity.kickIntensity = 0;
+  if (entity.kickPhase === undefined) entity.kickPhase = 0;
+
+  // Trigger kick-off when accelerating
+  if (acceleration > 0.02) {
+    // Strong acceleration detected - trigger a kick
+    entity.kickIntensity = Math.min(entity.kickIntensity + acceleration * 15, 3.0);
+    entity.kickPhase = time * 20; // Capture phase for asymmetric motion
+  }
+
+  // Decay kick intensity over time
+  entity.kickIntensity *= 0.92;
+
   entity.trail.unshift({ x, y, alpha: 1 });
   if (entity.trail.length > TRAIL_LENGTH) {
     entity.trail.pop();
@@ -646,11 +820,11 @@ function updateTail(entity, time) {
 
   const segmentLength = TAIL_LENGTH / TAIL_SEGMENTS;
   const baseWiggle = 0.4;
-  const speedWiggle = Math.min(speed * 2, 1.5);
+  const speedWiggle = Math.min(speed * 2, 2.0); // Gentler wiggle increase
   const wiggleIntensity = baseWiggle + speedWiggle;
-  const baseWiggleSpeed = 3;
-  const maxWiggleSpeed = 10;
-  const wiggleSpeed = baseWiggleSpeed + (speed * 8);
+  const baseWiggleSpeed = 6; // Faster base animation
+  const maxWiggleSpeed = 14; // Faster max oscillation
+  const wiggleSpeed = baseWiggleSpeed + (speed * 8); // More responsive to speed
   const clampedWiggleSpeed = Math.min(wiggleSpeed, maxWiggleSpeed);
 
   for (let i = 0; i < TAIL_SEGMENTS; i++) {
@@ -658,12 +832,21 @@ function updateTail(entity, time) {
     const targetX = i === 0 ? x : entity.tail[i - 1].x;
     const targetY = i === 0 ? y : entity.tail[i - 1].y;
 
+    // Regular swimming motion - smooth flowing wave
     const segmentWiggle = Math.sin(time * clampedWiggleSpeed + i * 0.5 + entity.wiggleOffset) *
                           wiggleIntensity * (i / TAIL_SEGMENTS) * 8;
 
+    // Kick-off motion - strong asymmetric thrust that propagates down the tail
+    const kickDelay = i * 0.15; // Wave propagates down the tail
+    const kickWave = Math.sin(entity.kickPhase - kickDelay * 10) *
+                     entity.kickIntensity * (i / TAIL_SEGMENTS) * 12;
+
+    // Combined wiggle with kick
+    const totalWiggle = segmentWiggle + kickWave;
+
     const wiggleAngle = entity.angle + Math.PI / 2;
-    const wiggleX = Math.cos(wiggleAngle) * segmentWiggle;
-    const wiggleY = Math.sin(wiggleAngle) * segmentWiggle;
+    const wiggleX = Math.cos(wiggleAngle) * totalWiggle;
+    const wiggleY = Math.sin(wiggleAngle) * totalWiggle;
 
     // Calculate the angle from target to segment
     const dx = segment.x - targetX;
@@ -683,10 +866,21 @@ function updateTail(entity, time) {
     const offsetX = targetX + Math.cos(angle) * segmentLength + wiggleX;
     const offsetY = targetY + Math.sin(angle) * segmentLength + wiggleY;
 
-    // Less interpolation to maintain tail length
-    const interpFactor = speed > 0.1 ? 0.2 : 0.3; // Slower interpolation when idle
+    // Smooth tail following - slower interpolation for graceful movement
+    const interpFactor = speed > 0.1 ? 0.12 : 0.2; // Slower, smoother tail
     segment.x += (offsetX - segment.x) * interpFactor;
     segment.y += (offsetY - segment.y) * interpFactor;
+
+    // Clamp segment distance to prevent stretching - tail must stay attached
+    const finalDx = segment.x - targetX;
+    const finalDy = segment.y - targetY;
+    const finalDist = Math.sqrt(finalDx * finalDx + finalDy * finalDy);
+    const maxDist = segmentLength * 1.2; // Allow only 20% stretch
+    if (finalDist > maxDist) {
+      const clampAngle = Math.atan2(finalDy, finalDx);
+      segment.x = targetX + Math.cos(clampAngle) * maxDist;
+      segment.y = targetY + Math.sin(clampAngle) * maxDist;
+    }
   }
 }
 
@@ -946,7 +1140,11 @@ buyHealthBtn.addEventListener('click', () => {
   if (selectedTadpoles.size > 0) {
     const selectedId = Array.from(selectedTadpoles)[0];
     const selectedTad = myTadpoles.find(t => t.id === selectedId);
-    const cost = BASE_UPGRADE_COST + healthUpgradeLevel * 2;
+
+    // Check if max level reached
+    if (healthUpgradeLevel >= MAX_UPGRADE_LEVEL) return;
+
+    const cost = HEALTH_UPGRADE_COSTS[healthUpgradeLevel];
 
     if (selectedTad && (selectedTad.food || 0) >= cost) {
       // Deduct cost
@@ -955,14 +1153,15 @@ buyHealthBtn.addEventListener('click', () => {
       // Increase health upgrade level
       healthUpgradeLevel++;
 
-      // Increase max health for this creature
-      if (!selectedTad.maxHealthBonus) selectedTad.maxHealthBonus = 0;
-      selectedTad.maxHealthBonus += HEALTH_PER_UPGRADE;
+      // Set max health bonus to cumulative value for this level
+      selectedTad.maxHealthBonus = HEALTH_BONUSES[healthUpgradeLevel - 1];
+      selectedTad.healthLevel = healthUpgradeLevel; // Track for visuals
 
-      // Also heal the creature by the upgrade amount
+      // Also heal the creature
+      const maxHealth = MAX_HEALTH + selectedTad.maxHealthBonus;
       selectedTad.health = Math.min(
-        (selectedTad.health || MAX_HEALTH) + HEALTH_PER_UPGRADE,
-        MAX_HEALTH + selectedTad.maxHealthBonus
+        (selectedTad.health || MAX_HEALTH) + 30, // Heal 30 HP on upgrade
+        maxHealth
       );
 
       updateUpgradeMenu();
@@ -975,7 +1174,11 @@ buyStrengthBtn.addEventListener('click', () => {
   if (selectedTadpoles.size > 0) {
     const selectedId = Array.from(selectedTadpoles)[0];
     const selectedTad = myTadpoles.find(t => t.id === selectedId);
-    const cost = BASE_UPGRADE_COST + strengthUpgradeLevel * 2;
+
+    // Check if max level reached
+    if (strengthUpgradeLevel >= MAX_UPGRADE_LEVEL) return;
+
+    const cost = STRENGTH_UPGRADE_COSTS[strengthUpgradeLevel];
 
     if (selectedTad && (selectedTad.food || 0) >= cost) {
       // Deduct cost
@@ -984,9 +1187,9 @@ buyStrengthBtn.addEventListener('click', () => {
       // Increase strength upgrade level
       strengthUpgradeLevel++;
 
-      // Increase strength for this creature
-      if (!selectedTad.strengthBonus) selectedTad.strengthBonus = 0;
-      selectedTad.strengthBonus += STRENGTH_PER_UPGRADE;
+      // Set strength bonus to cumulative value for this level
+      selectedTad.strengthBonus = STRENGTH_BONUSES[strengthUpgradeLevel - 1];
+      selectedTad.strengthLevel = strengthUpgradeLevel; // Track for visuals
 
       updateUpgradeMenu();
       updateSelectionCount();
@@ -1007,6 +1210,9 @@ transformCellBtn.addEventListener('click', () => {
       selectedTad.type = 'cell';
       selectedTad.radius = CELL_RADIUS;
       selectedTad.color = '#4a5f7f'; // Less dark hue of dark blue
+
+      // Notify server of type change for NPC aggression logic
+      socket.emit('updateType', { type: 'cell', radius: CELL_RADIUS });
 
       // Clear tail and hairs completely - force fresh initialization
       selectedTad.tail = null;
@@ -1037,20 +1243,22 @@ function updateUpgradeMenu() {
   if (!selectedTad) return;
 
   const currentFood = selectedTad.food || 0;
-  const healthCost = BASE_UPGRADE_COST + healthUpgradeLevel * 2;
-  const strengthCost = BASE_UPGRADE_COST + strengthUpgradeLevel * 2;
+  const healthMaxed = healthUpgradeLevel >= MAX_UPGRADE_LEVEL;
+  const strengthMaxed = strengthUpgradeLevel >= MAX_UPGRADE_LEVEL;
+  const healthCost = healthMaxed ? 0 : HEALTH_UPGRADE_COSTS[healthUpgradeLevel];
+  const strengthCost = strengthMaxed ? 0 : STRENGTH_UPGRADE_COSTS[strengthUpgradeLevel];
 
-  // Update levels
-  healthUpgradeLevelEl.textContent = healthUpgradeLevel;
-  strengthUpgradeLevelEl.textContent = strengthUpgradeLevel;
+  // Update levels (show level/max)
+  healthUpgradeLevelEl.textContent = `${healthUpgradeLevel}/${MAX_UPGRADE_LEVEL}`;
+  strengthUpgradeLevelEl.textContent = `${strengthUpgradeLevel}/${MAX_UPGRADE_LEVEL}`;
 
-  // Update costs
-  healthUpgradeCostEl.textContent = healthCost;
-  strengthUpgradeCostEl.textContent = strengthCost;
+  // Update costs (show MAX if maxed)
+  healthUpgradeCostEl.textContent = healthMaxed ? 'MAX' : healthCost;
+  strengthUpgradeCostEl.textContent = strengthMaxed ? 'MAX' : strengthCost;
 
-  // Enable/disable buttons based on food availability
-  buyHealthBtn.disabled = currentFood < healthCost;
-  buyStrengthBtn.disabled = currentFood < strengthCost;
+  // Enable/disable buttons based on food availability and max level
+  buyHealthBtn.disabled = healthMaxed || currentFood < healthCost;
+  buyStrengthBtn.disabled = strengthMaxed || currentFood < strengthCost;
   transformCellBtn.disabled = selectedTad.type !== 'tadpole' || currentFood < 5;
 }
 
@@ -1150,8 +1358,6 @@ function updateCreatureList() {
 }
 
 function updateSelectionCount() {
-  selectionCount.textContent = `Selected: ${selectedTadpoles.size}`;
-
   // Show/hide selection menu based on whether anything is selected
   if (selectedTadpoles.size > 0) {
     selectionMenu.classList.remove('hidden');
@@ -1230,280 +1436,8 @@ function updateSelectionCount() {
   }
 }
 
-// Update NPCs
-function updateNPC(npc, time) {
-  // Random movement
-  if (!npc.moveTarget || Date.now() - npc.targetChangeTime > 3000) {
-    npc.moveTarget = {
-      x: npc.x + (Math.random() - 0.5) * 400,
-      y: npc.y + (Math.random() - 0.5) * 400
-    };
-    npc.targetChangeTime = Date.now();
-  }
-
-  // Move towards target
-  if (npc.moveTarget) {
-    const dx = npc.moveTarget.x - npc.x;
-    const dy = npc.moveTarget.y - npc.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-
-    if (dist < ARRIVAL_THRESHOLD) {
-      npc.moveTarget = null;
-      // Ultra-gentle coast to a stop
-      npc.vx *= 0.985;
-      npc.vy *= 0.985;
-    } else {
-      let moveSpeed = NPC_MOVE_SPEED;
-
-      // Gentle deceleration as approaching target
-      const decelerationZone = ARRIVAL_THRESHOLD * 2;
-      if (dist < decelerationZone) {
-        const speedMultiplier = 0.5 + 0.5 * (dist - ARRIVAL_THRESHOLD) / (decelerationZone - ARRIVAL_THRESHOLD);
-        moveSpeed *= speedMultiplier;
-      }
-
-      npc.vx += (dx / dist) * moveSpeed;
-      npc.vy += (dy / dist) * moveSpeed;
-    }
-  }
-
-  // Apply friction
-  npc.vx *= FRICTION;
-  npc.vy *= FRICTION;
-
-  if (Math.abs(npc.vx) < 0.01) npc.vx = 0;
-  if (Math.abs(npc.vy) < 0.01) npc.vy = 0;
-
-  npc.x += npc.vx;
-  npc.y += npc.vy;
-  npc.renderX = npc.x;
-  npc.renderY = npc.y;
-
-  // Apply attack lunge animation
-  if (npc.attackLungeTime) {
-    const timeSinceLunge = Date.now() - npc.attackLungeTime;
-    if (timeSinceLunge < ATTACK_LUNGE_DURATION * 2) {
-      let lungeProgress;
-      let isLunging = false;
-
-      if (timeSinceLunge < ATTACK_LUNGE_DURATION) {
-        // Lunge forward (0 to 1) - sudden jerky motion
-        lungeProgress = timeSinceLunge / ATTACK_LUNGE_DURATION;
-        isLunging = true;
-        // Jerky easing - fast acceleration
-        lungeProgress = lungeProgress * lungeProgress;
-      } else {
-        // Bob back (1 to 0) - slower, with squish
-        lungeProgress = 1 - (timeSinceLunge - ATTACK_LUNGE_DURATION) / ATTACK_LUNGE_DURATION;
-        // Ease out with bounce
-        lungeProgress = Math.sqrt(lungeProgress);
-      }
-
-      const lungeOffset = lungeProgress * ATTACK_LUNGE_DISTANCE;
-
-      npc.renderX += Math.cos(npc.attackLungeAngle) * lungeOffset;
-      npc.renderY += Math.sin(npc.attackLungeAngle) * lungeOffset;
-
-      // Add squish effect when pulling back (spring loading)
-      if (!isLunging) {
-        const squishAmount = (1 - lungeProgress) * 0.7; // Max 70% squish
-        npc.attackSquish = squishAmount;
-        npc.attackSquishAngle = npc.attackLungeAngle;
-      } else {
-        npc.attackSquish = 0;
-      }
-    } else {
-      npc.attackLungeTime = null;
-      npc.attackSquish = 0;
-    }
-  }
-
-  // NPCs don't eat food - they're client-side only and shouldn't affect shared game state
-  // They just swim around randomly
-
-  // NPC vs NPC combat - NPCs sometimes attack each other
-  if (!npc.attackTarget && Math.random() < 0.001) { // 0.1% chance per frame to pick a fight
-    const nearbyNPCs = Object.values(npcs).filter(other => {
-      if (other.id === npc.id) return false;
-      const dx = other.x - npc.x;
-      const dy = other.y - npc.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      return dist < 200; // Only attack NPCs within 200 pixels
-    });
-
-    if (nearbyNPCs.length > 0) {
-      npc.attackTarget = nearbyNPCs[Math.floor(Math.random() * nearbyNPCs.length)].id;
-    }
-  }
-
-  // Attack another NPC if we have a target
-  if (npc.attackTarget) {
-    const target = npcs[npc.attackTarget];
-    if (target && target.health > 0) {
-      const dx = target.x - npc.x;
-      const dy = target.y - npc.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-
-      // Move towards target
-      if (dist > ATTACK_RANGE) {
-        npc.vx += (dx / dist) * NPC_MOVE_SPEED * 0.5;
-        npc.vy += (dy / dist) * NPC_MOVE_SPEED * 0.5;
-      }
-
-      // Attack when in range
-      if (dist < ATTACK_RANGE && Date.now() - npc.lastAttack > NPC_ATTACK_COOLDOWN) {
-        const npcDamage = ATTACK_DAMAGE * (npc.type === 'cell' ? 1.5 : 1);
-        const actualDamage = npcDamage * (target.type === 'cell' ? CELL_DAMAGE_RESISTANCE : 1);
-        target.health -= actualDamage;
-        target.lastHit = Date.now();
-        npc.lastAttack = Date.now();
-
-        // Spawn damage text
-        spawnDamageText(target.x, target.y, actualDamage);
-
-        // Attack animation
-        npc.attackLungeTime = Date.now();
-        const angle = Math.atan2(dy, dx);
-        npc.attackLungeAngle = angle;
-
-        // Bounce target
-        target.vx += Math.cos(angle) * 1;
-        target.vy += Math.sin(angle) * 1;
-
-        // Check if target died
-        if (target.health <= 0) {
-          handleDeath(target);
-          npc.attackTarget = null;
-        }
-      }
-    } else {
-      // Target died or doesn't exist, clear it
-      npc.attackTarget = null;
-    }
-  }
-
-  // Collision with other NPCs
-  for (let otherNpc of Object.values(npcs)) {
-    if (otherNpc.id === npc.id) continue;
-
-    const dx = npc.x - otherNpc.x;
-    const dy = npc.y - otherNpc.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    const minDistance = npc.radius + otherNpc.radius;
-
-    if (distance < minDistance && distance > 0) {
-      // Calculate bounce
-      const angle = Math.atan2(dy, dx);
-      const overlap = minDistance - distance;
-
-      // Push apart
-      const pushX = Math.cos(angle) * overlap * 0.5;
-      const pushY = Math.sin(angle) * overlap * 0.5;
-
-      npc.x += pushX;
-      npc.y += pushY;
-
-      // Bounce velocity
-      const bounceStrength = 0.3;
-      npc.vx += Math.cos(angle) * bounceStrength;
-      npc.vy += Math.sin(angle) * bounceStrength;
-    }
-  }
-
-  // Collision with player tadpoles
-  for (let tad of myTadpoles) {
-    const dx = npc.x - tad.x;
-    const dy = npc.y - tad.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    const minDistance = npc.radius + tad.radius;
-
-    if (distance < minDistance && distance > 0) {
-      // Calculate bounce
-      const angle = Math.atan2(dy, dx);
-      const overlap = minDistance - distance;
-
-      // Push apart
-      const pushX = Math.cos(angle) * overlap * 0.5;
-      const pushY = Math.sin(angle) * overlap * 0.5;
-
-      npc.x += pushX;
-      npc.y += pushY;
-
-      // Bounce velocity
-      const bounceStrength = 0.3;
-      npc.vx += Math.cos(angle) * bounceStrength;
-      npc.vy += Math.sin(angle) * bounceStrength;
-    }
-  }
-
-  // Collision with other players
-  for (let otherPlayer of Object.values(players)) {
-    const dx = npc.x - otherPlayer.x;
-    const dy = npc.y - otherPlayer.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    const minDistance = npc.radius + otherPlayer.radius;
-
-    if (distance < minDistance && distance > 0) {
-      // Calculate bounce
-      const angle = Math.atan2(dy, dx);
-      const overlap = minDistance - distance;
-
-      // Push apart
-      const pushX = Math.cos(angle) * overlap * 0.5;
-      const pushY = Math.sin(angle) * overlap * 0.5;
-
-      npc.x += pushX;
-      npc.y += pushY;
-
-      // Bounce velocity
-      const bounceStrength = 0.3;
-      npc.vx += Math.cos(angle) * bounceStrength;
-      npc.vy += Math.sin(angle) * bounceStrength;
-    }
-  }
-
-  // Health regeneration
-  if (Date.now() - npc.lastHit > 1000) {
-    npc.health = Math.min(NPC_MAX_HEALTH, npc.health + NPC_HEALTH_REGEN_RATE);
-  }
-
-  // Avoid player tadpoles (move away) unless provoked
-  for (let tad of myTadpoles) {
-    const dx = npc.x - tad.x;
-    const dy = npc.y - tad.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-
-    // Only attack if NPC has been provoked
-    if (npc.provoked && dist < ATTACK_RANGE && Date.now() - npc.lastAttack > NPC_ATTACK_COOLDOWN) {
-      // NPCs inflict same base damage as players, with cell resistance
-      const npcDamage = ATTACK_DAMAGE * (npc.type === 'cell' ? 1.5 : 1); // Cells do 1.5x damage
-      const actualDamage = npcDamage * (tad.type === 'cell' ? CELL_DAMAGE_RESISTANCE : 1);
-      tad.health -= actualDamage;
-      tad.lastHit = Date.now();
-      npc.lastAttack = Date.now();
-
-      // Spawn damage text
-      spawnDamageText(tad.x, tad.y, actualDamage);
-
-      // Attack animation
-      npc.attackLungeTime = Date.now();
-      const angle = Math.atan2(-dy, -dx); // Angle towards player
-      npc.attackLungeAngle = angle;
-
-      // Bounce player back
-      tad.vx -= Math.cos(angle) * 0.5;
-      tad.vy -= Math.sin(angle) * 0.5;
-    } else if (!npc.provoked && dist < 100) {
-      // Avoid player - move away gently
-      const avoidAngle = Math.atan2(dy, dx);
-      npc.vx += Math.cos(avoidAngle) * 0.015;
-      npc.vy += Math.sin(avoidAngle) * 0.015;
-    }
-  }
-}
-
 // Game loop
-function update() {
+function update(deltaTime = 1) {
   if (isDead) return;
 
   // Auto-select single creature (no yellow highlight)
@@ -1511,17 +1445,29 @@ function update() {
     selectedTadpoles.add(myTadpoles[0].id);
   }
 
-  // Update NPCs
+  // Update NPC tails for rendering (NPC behavior is server-controlled)
   const time = Date.now() / 1000;
   for (let npc of Object.values(npcs)) {
-    updateNPC(npc, time);
-    // Only update tail for tadpoles, not cells
+    // Only update tail animation for tadpoles
     if (npc.type === 'tadpole') {
       updateTail(npc, time);
     }
+    // Smooth interpolation for render position
+    const interpFactor = 0.2;
+    if (npc.renderX !== undefined) {
+      npc.renderX += (npc.x - npc.renderX) * interpFactor;
+      npc.renderY += (npc.y - npc.renderY) * interpFactor;
+    } else {
+      npc.renderX = npc.x;
+      npc.renderY = npc.y;
+    }
   }
 
-  // Update particles - gentle floating motion
+  // Update particles - gentle floating motion with player-relative recycling
+  const playerCenterX = myTadpoles.length > 0 ? myTadpoles[0].x : 0;
+  const playerCenterY = myTadpoles.length > 0 ? myTadpoles[0].y : 0;
+  const particleRange = 2500; // Max distance from player
+
   particles.forEach(particle => {
     // Gentle sinusoidal floating
     const floatX = Math.sin(time * 0.5 + particle.phase) * particle.driftSpeed;
@@ -1531,11 +1477,18 @@ function update() {
     particle.x += Math.cos(particle.driftAngle) * particle.driftSpeed + floatX;
     particle.y += Math.sin(particle.driftAngle) * particle.driftSpeed + floatY;
 
-    // Wrap around world edges
-    if (particle.x > WORLD_SIZE / 2) particle.x = -WORLD_SIZE / 2;
-    if (particle.x < -WORLD_SIZE / 2) particle.x = WORLD_SIZE / 2;
-    if (particle.y > WORLD_SIZE / 2) particle.y = -WORLD_SIZE / 2;
-    if (particle.y < -WORLD_SIZE / 2) particle.y = WORLD_SIZE / 2;
+    // Recycle particles that are too far from player
+    const dx = particle.x - playerCenterX;
+    const dy = particle.y - playerCenterY;
+    const distSq = dx * dx + dy * dy;
+    if (distSq > particleRange * particleRange) {
+      // Respawn at random position around player
+      const angle = Math.random() * Math.PI * 2;
+      const dist = particleRange * 0.5 + Math.random() * particleRange * 0.4;
+      particle.x = playerCenterX + Math.cos(angle) * dist;
+      particle.y = playerCenterY + Math.sin(angle) * dist;
+      particle.driftAngle = Math.random() * Math.PI * 2;
+    }
   });
 
   // Update player tadpoles
@@ -1781,11 +1734,7 @@ function update() {
           if (Date.now() - tad.lastAttack > attackCooldown) {
             const baseStrength = playerStrength + (tad.strengthBonus || 0);
             const damage = baseStrength * (tad.type === 'cell' ? 1.5 : 1);
-            currentAttackTarget.health -= damage;
-            currentAttackTarget.lastHit = Date.now();
 
-            // Spawn damage text
-            spawnDamageText(currentAttackTarget.x, currentAttackTarget.y, damage);
             tad.lastAttack = Date.now();
 
             // Start attack animation (lunge)
@@ -1793,32 +1742,43 @@ function update() {
             const angle = Math.atan2(currentAttackTarget.y - tad.y, currentAttackTarget.x - tad.x);
             tad.attackLungeAngle = angle;
 
-            // Mark NPC as provoked if attacking an NPC
+            // If attacking an NPC, send to server (server handles damage, death, provoke)
             if (npcs[currentAttackTarget.id]) {
-              currentAttackTarget.provoked = true;
-            }
-
-            // Bounce target
-            currentAttackTarget.vx += Math.cos(angle) * 1;
-            currentAttackTarget.vy += Math.sin(angle) * 1;
-
-            // Check if target died
-            if (currentAttackTarget.health <= 0) {
-              const deathX = currentAttackTarget.x;
-              const deathY = currentAttackTarget.y;
-              handleDeath(currentAttackTarget);
-
-              // Tell supporting creatures to collect food from this kill
-              myTadpoles.forEach(supportingTad => {
-                if (supportingTad.supportMode && supportingTad.supportLeader === tad.id) {
-                  // Mark this creature to collect food from the death location
-                  supportingTad.collectFoodAt = { x: deathX, y: deathY, time: Date.now() };
-                }
+              socket.emit('attackNPC', {
+                npcId: currentAttackTarget.id,
+                damage: damage
               });
+              // Don't apply damage locally - server will broadcast npcDamaged event
+            } else {
+              // Attacking another player or local entity - apply damage locally
+              currentAttackTarget.health -= damage;
+              currentAttackTarget.lastHit = Date.now();
 
-              // Only clear global attackTarget if not in support mode
-              if (!tad.supportMode && attackTarget === currentAttackTarget) {
-                attackTarget = null;
+              // Spawn damage text
+              spawnDamageText(currentAttackTarget.x, currentAttackTarget.y, damage);
+
+              // Bounce target
+              currentAttackTarget.vx += Math.cos(angle) * 1;
+              currentAttackTarget.vy += Math.sin(angle) * 1;
+
+              // Check if target died
+              if (currentAttackTarget.health <= 0) {
+                const deathX = currentAttackTarget.x;
+                const deathY = currentAttackTarget.y;
+                handleDeath(currentAttackTarget);
+
+                // Tell supporting creatures to collect food from this kill
+                myTadpoles.forEach(supportingTad => {
+                  if (supportingTad.supportMode && supportingTad.supportLeader === tad.id) {
+                    // Mark this creature to collect food from the death location
+                    supportingTad.collectFoodAt = { x: deathX, y: deathY, time: Date.now() };
+                  }
+                });
+
+                // Only clear global attackTarget if not in support mode
+                if (!tad.supportMode && attackTarget === currentAttackTarget) {
+                  attackTarget = null;
+                }
               }
             }
           }
@@ -1851,22 +1811,60 @@ function update() {
         const distY = targetY - tad.y;
         const distance = Math.sqrt(distX * distX + distY * distY);
 
+        // Calculate current speed
+        const currentSpeed = Math.sqrt(tad.vx * tad.vx + tad.vy * tad.vy);
+
+        // Dynamic deceleration zone based on current speed - faster = start slowing earlier
+        const minDecelZone = ARRIVAL_THRESHOLD * 3;
+        const decelerationZone = Math.max(minDecelZone, currentSpeed * 25);
+
         if (distance < ARRIVAL_THRESHOLD) {
-          // Ultra-gentle damping when very close - long slow glide
-          tad.vx *= 0.985;
-          tad.vy *= 0.985;
+          // Arrived - gentle glide to stop with soft correction
+          tad.vx *= 0.95;
+          tad.vy *= 0.95;
+
+          // Gentle nudge toward exact target to prevent drifting
+          if (distance > 5) {
+            tad.vx += (distX / distance) * 0.015;
+            tad.vy += (distY / distance) * 0.015;
+          }
+        } else if (distance < decelerationZone) {
+          // Approaching - calculate desired velocity for smooth gliding arrival
+          const arrivalTime = 35; // More frames = smoother coast
+          const desiredVx = distX / arrivalTime;
+          const desiredVy = distY / arrivalTime;
+
+          // Gentle blend for natural gliding deceleration
+          const blendFactor = 0.08;
+          tad.vx += (desiredVx - tad.vx) * blendFactor;
+          tad.vy += (desiredVy - tad.vy) * blendFactor;
+
+          // Don't add normal movement input in decel zone
+          dx = 0;
+          dy = 0;
         } else {
-          // Calculate movement direction
+          // Normal movement toward target
           dx = distX / distance;
           dy = distY / distance;
 
-          // Gentle deceleration as we approach the target - more of a skid
-          const decelerationZone = ARRIVAL_THRESHOLD * 2; // Start slowing down at 60 pixels
-          if (distance < decelerationZone) {
-            // Gradually reduce speed but keep momentum for skidding effect
-            const speedMultiplier = 0.5 + 0.5 * (distance - ARRIVAL_THRESHOLD) / (decelerationZone - ARRIVAL_THRESHOLD);
-            dx *= speedMultiplier;
-            dy *= speedMultiplier;
+          // Check if moving away from target - apply counter-force for quicker turns
+          const dotProduct = tad.vx * dx + tad.vy * dy;
+          if (dotProduct < 0 && currentSpeed > 0.3) {
+            // Moving opposite to target direction - brake very hard and boost turn
+            const brakeFactor = 0.85; // Very strong braking when turning around
+            tad.vx *= brakeFactor;
+            tad.vy *= brakeFactor;
+
+            // Strong thrust toward target for sharp turns
+            dx *= 4;
+            dy *= 4;
+          } else if (dotProduct < currentSpeed * 0.5 && currentSpeed > 0.3) {
+            // Moving at an angle to target - apply moderate correction
+            const brakeFactor = 0.95;
+            tad.vx *= brakeFactor;
+            tad.vy *= brakeFactor;
+            dx *= 2;
+            dy *= 2;
           }
         }
       }
@@ -2078,32 +2076,42 @@ function update() {
 
       const elapsed = Date.now() - tad.hibernationStartTime;
       if (elapsed >= HIBERNATION_DURATION) {
-        // Spawn a new tadpole
+        // Pop out direction - random angle
+        const popAngle = Math.random() * Math.PI * 2;
+        const popSpeed = 3; // Gentle initial velocity
+        const spawnDistance = tad.radius + TADPOLE_RADIUS; // Spawn right at the edge, touching the cell
+
+        // Spawn a new tadpole right next to the cell
         const newTad = {
           id: `${myId}_${Date.now()}`,
-          x: tad.x + 30,
-          y: tad.y + 30,
-          vx: 0,
-          vy: 0,
-          renderX: tad.x + 30,
-          renderY: tad.y + 30,
+          x: tad.x + Math.cos(popAngle) * spawnDistance,
+          y: tad.y + Math.sin(popAngle) * spawnDistance,
+          vx: Math.cos(popAngle) * popSpeed,
+          vy: Math.sin(popAngle) * popSpeed,
+          renderX: tad.x + Math.cos(popAngle) * spawnDistance,
+          renderY: tad.y + Math.sin(popAngle) * spawnDistance,
           color: '#FFFFFF',
           radius: TADPOLE_RADIUS,
           score: 0,
-          name: myName,
+          name: tad.name,
           health: MAX_HEALTH,
           lastHit: 0,
           lastAttack: 0,
           type: 'tadpole',
           food: 0,
           birthTime: Date.now(), // For birth animation
-          birthDuration: 1000 // 1 second birth animation
+          birthDuration: 800 // Faster, more dramatic birth animation
         };
-        newTad.renderX = newTad.x;
-        newTad.renderY = newTad.y;
         initializeTadpole(newTad);
 
         myTadpoles.push(newTad);
+
+        // Cell recoil in opposite direction
+        tad.vx = -Math.cos(popAngle) * 3;
+        tad.vy = -Math.sin(popAngle) * 3;
+
+        // Mark cell as just gave birth for visual effect
+        tad.birthBurstTime = Date.now();
 
         // End hibernation
         tad.isHibernating = false;
@@ -2185,20 +2193,28 @@ function update() {
     update.lastSent = Date.now();
   }
 
-  // Interpolate other players
+  // Clean up expired death effects
+  const now = Date.now();
+  deathEffects = deathEffects.filter(effect => now - effect.startTime < effect.duration);
+}
+
+// Visual interpolation - runs once per render frame (not per physics step)
+function interpolateVisuals() {
+  const time = Date.now() / 1000;
+
+  // Frame-rate independent interpolation factor
+  const interpFactor = 1 - Math.pow(1 - INTERPOLATION_FACTOR, renderDeltaTime / PHYSICS_TIMESTEP);
+
+  // Interpolate other players' positions for smooth rendering
   Object.values(players).forEach(player => {
     if (!player.renderX) player.renderX = player.x;
     if (!player.renderY) player.renderY = player.y;
 
-    player.renderX += (player.x - player.renderX) * INTERPOLATION_FACTOR;
-    player.renderY += (player.y - player.renderY) * INTERPOLATION_FACTOR;
+    player.renderX += (player.x - player.renderX) * interpFactor;
+    player.renderY += (player.y - player.renderY) * interpFactor;
 
     updateTail(player, time);
   });
-
-  // Clean up expired death effects
-  const now = Date.now();
-  deathEffects = deathEffects.filter(effect => now - effect.startTime < effect.duration);
 }
 
 function handleDeath(entity) {
@@ -2267,6 +2283,11 @@ function handleDeath(entity) {
       // Cells don't have tails, they're hexagons
       npc.angle = 0;
       npc.wiggleOffset = Math.random() * Math.PI * 2;
+      // Cell fatigue system
+      npc.chaseEnergy = 100;
+      npc.maxChaseEnergy = 100;
+      npc.isTired = false;
+      npc.tiredStartTime = 0;
     } else {
       initializeTadpole(npc);
     }
@@ -2605,7 +2626,7 @@ function drawEntity(entity, isMe, isNPC, isSelected = false) {
   }
 
   // Draw health bar if damaged
-  const maxHealth = isNPC ? NPC_MAX_HEALTH : MAX_HEALTH;
+  const maxHealth = entity.maxHealth || (isNPC ? NPC_MAX_HEALTH : MAX_HEALTH);
   if (entity.health < maxHealth) {
     const barWidth = entity.radius * 2;
     const barHeight = 4;
@@ -2623,17 +2644,43 @@ function drawTadpole(entity, isMe, isNPC, isSelected) {
   const x = entity.renderX || entity.x;
   const y = entity.renderY || entity.y;
 
-  // Birth animation
+  // Calculate upgrade visual effects
+  const healthLvl = entity.healthLevel || 0;
+  const strengthLvl = entity.strengthLevel || 0;
+  const totalLvl = healthLvl + strengthLvl;
+
+  // Size bonus: +4% per combined level (max +40% at level 10 total)
+  const upgradeSizeBonus = 1 + (totalLvl * 0.04);
+
+  // Glow intensity based on level (starts at level 2)
+  const upgradeGlow = totalLvl >= 2 ? Math.min((totalLvl - 1) * 0.12, 0.6) : 0;
+
+  // Strength visual: color saturation boost
+  const strengthColorBoost = strengthLvl * 0.08; // More vibrant color
+
+  // Birth animation - dramatic pop-out effect
   let birthScale = 1;
   let birthGlow = 0;
+  let birthActive = false;
   if (entity.birthTime && entity.birthDuration) {
     const timeSinceBirth = Date.now() - entity.birthTime;
     if (timeSinceBirth < entity.birthDuration) {
+      birthActive = true;
       const progress = timeSinceBirth / entity.birthDuration;
-      // Ease out: start fast, end slow
-      birthScale = Math.sqrt(progress);
-      // Glow diminishes as birth completes
-      birthGlow = (1 - progress) * 0.8;
+
+      // Pop effect: start at 0, overshoot to 1.3, settle to 1
+      if (progress < 0.3) {
+        // Quick expand phase (0 to 1.3)
+        birthScale = (progress / 0.3) * 1.3;
+      } else {
+        // Settle phase (1.3 back to 1 with elastic ease)
+        const settleProgress = (progress - 0.3) / 0.7;
+        const elasticEase = 1 + Math.sin(settleProgress * Math.PI) * 0.3 * (1 - settleProgress);
+        birthScale = elasticEase;
+      }
+
+      // Intense glow at start, fades quickly
+      birthGlow = Math.pow(1 - progress, 2) * 1.2;
     } else {
       // Birth animation complete, clean up
       entity.birthTime = null;
@@ -2641,16 +2688,29 @@ function drawTadpole(entity, isMe, isNPC, isSelected) {
     }
   }
 
-  // Apply birth scaling if active
-  if (birthScale < 1) {
+  // Apply birth effects if active
+  if (birthActive) {
     ctx.save();
     ctx.translate(x, y);
 
-    // Draw birth glow
+    // Draw birth glow - expanding rings
     if (birthGlow > 0) {
+      // Outer expanding ring
+      const ringRadius = entity.radius * (2 + (1 - birthGlow) * 3);
+      ctx.strokeStyle = `rgba(100, 200, 255, ${birthGlow * 0.5})`;
+      ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.arc(0, 0, entity.radius * 2 * (1.5 - birthScale), 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(100, 200, 255, ${birthGlow * 0.3})`;
+      ctx.arc(0, 0, ringRadius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Inner glow
+      const glowGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, entity.radius * 3);
+      glowGradient.addColorStop(0, `rgba(255, 255, 255, ${birthGlow * 0.6})`);
+      glowGradient.addColorStop(0.5, `rgba(100, 200, 255, ${birthGlow * 0.3})`);
+      glowGradient.addColorStop(1, 'rgba(100, 200, 255, 0)');
+      ctx.fillStyle = glowGradient;
+      ctx.beginPath();
+      ctx.arc(0, 0, entity.radius * 3, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -2702,6 +2762,35 @@ function drawTadpole(entity, isMe, isNPC, isSelected) {
     ctx.stroke();
   }
 
+  // Draw upgrade glow aura (before body)
+  if (upgradeGlow > 0 && isMe) {
+    ctx.save();
+    ctx.translate(x, y);
+
+    // Outer glow - health gives blue tint, strength gives orange
+    const glowRadius = entity.radius * upgradeSizeBonus * 2;
+    const glowGradient = ctx.createRadialGradient(0, 0, entity.radius * upgradeSizeBonus, 0, 0, glowRadius);
+
+    // Mix colors based on health vs strength
+    const healthRatio = healthLvl / Math.max(totalLvl, 1);
+    const r = Math.round(100 + (1 - healthRatio) * 155);
+    const g = Math.round(180 + healthRatio * 40);
+    const b = Math.round(255 * healthRatio + 100 * (1 - healthRatio));
+
+    glowGradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${upgradeGlow * 0.4})`);
+    glowGradient.addColorStop(0.5, `rgba(${r}, ${g}, ${b}, ${upgradeGlow * 0.15})`);
+    glowGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+
+    ctx.beginPath();
+    ctx.arc(0, 0, glowRadius, 0, Math.PI * 2);
+    ctx.fillStyle = glowGradient;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Apply upgrade size to effective radius
+  const effectiveRadius = entity.radius * upgradeSizeBonus;
+
   // Draw body
   ctx.save();
   ctx.translate(x, y);
@@ -2725,8 +2814,22 @@ function drawTadpole(entity, isMe, isNPC, isSelected) {
   }
 
   ctx.beginPath();
-  ctx.ellipse(0, 0, entity.radius * 1.2, entity.radius, 0, 0, Math.PI * 2);
-  ctx.fillStyle = entity.color;
+  ctx.ellipse(0, 0, effectiveRadius * 1.2, effectiveRadius, 0, 0, Math.PI * 2);
+
+  // Enhanced color for strength upgrades
+  let bodyColor = entity.color;
+  if (strengthLvl > 0 && isMe) {
+    // Parse hex color and boost saturation/brightness
+    const r = parseInt(entity.color.slice(1, 3), 16);
+    const g = parseInt(entity.color.slice(3, 5), 16);
+    const b = parseInt(entity.color.slice(5, 7), 16);
+    const boost = 1 + strengthColorBoost;
+    const newR = Math.min(255, Math.round(r * boost));
+    const newG = Math.min(255, Math.round(g * boost));
+    const newB = Math.min(255, Math.round(b * boost));
+    bodyColor = `rgb(${newR}, ${newG}, ${newB})`;
+  }
+  ctx.fillStyle = bodyColor;
   ctx.fill();
 
   // Border - yellow for selected (only if 2+ creatures), white for own unselected
@@ -2740,19 +2843,47 @@ function drawTadpole(entity, isMe, isNPC, isSelected) {
     ctx.stroke();
   }
 
-  // Eyes
-  const eyeOffset = entity.radius * 0.4;
-  const eyeSize = entity.radius * 0.25;
+  // Eyes - size scales with upgrades
+  const eyeOffset = effectiveRadius * 0.4;
+  const eyeSize = effectiveRadius * (0.25 + totalLvl * 0.015); // Slightly bigger eyes at higher levels
 
+  // Level 3+: Draw eye whites first for more detailed eyes
+  if (totalLvl >= 3 && isMe) {
+    ctx.beginPath();
+    ctx.arc(eyeOffset, -eyeOffset * 0.7, eyeSize * 1.3, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(eyeOffset, eyeOffset * 0.7, eyeSize * 1.3, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.fill();
+  }
+
+  // Main eye pupils
   ctx.beginPath();
   ctx.arc(eyeOffset, -eyeOffset * 0.7, eyeSize, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+  ctx.fillStyle = totalLvl >= 5 && isMe ? 'rgba(60, 0, 120, 0.95)' : 'rgba(0, 0, 0, 0.8)'; // Purple eyes at max level
   ctx.fill();
 
   ctx.beginPath();
   ctx.arc(eyeOffset, eyeOffset * 0.7, eyeSize, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+  ctx.fillStyle = totalLvl >= 5 && isMe ? 'rgba(60, 0, 120, 0.95)' : 'rgba(0, 0, 0, 0.8)';
   ctx.fill();
+
+  // Level 4+: Eye shine/glint
+  if (totalLvl >= 4 && isMe) {
+    const glintSize = eyeSize * 0.35;
+    ctx.beginPath();
+    ctx.arc(eyeOffset + eyeSize * 0.3, -eyeOffset * 0.7 - eyeSize * 0.3, glintSize, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(eyeOffset + eyeSize * 0.3, eyeOffset * 0.7 - eyeSize * 0.3, glintSize, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.fill();
+  }
 
   ctx.restore();
 
@@ -2770,7 +2901,7 @@ function drawTadpole(entity, isMe, isNPC, isSelected) {
   }
 
   // Restore birth scaling context if it was saved
-  if (birthScale < 1) {
+  if (birthActive) {
     ctx.restore();
   }
 }
@@ -2779,13 +2910,35 @@ function drawCell(entity, isMe, isSelected) {
   const x = entity.renderX || entity.x;
   const y = entity.renderY || entity.y;
 
+  // Calculate upgrade visual effects
+  const healthLvl = entity.healthLevel || 0;
+  const strengthLvl = entity.strengthLevel || 0;
+  const totalLvl = healthLvl + strengthLvl;
+
+  // Size bonus: +3% per combined level (max +30% at level 10 total)
+  const upgradeSizeBonus = 1 + (totalLvl * 0.03);
+
+  // Glow intensity based on level (starts at level 2)
+  const upgradeGlow = totalLvl >= 2 ? Math.min((totalLvl - 1) * 0.1, 0.5) : 0;
+
+  // Hair density bonus: more hairs at higher levels
+  const hairDensityBonus = Math.floor(totalLvl * 0.5); // +0.5 hairs per edge per level
+
+  // Reinitialize hairs if upgrade level changed (to add more hairs)
+  if (entity.lastUpgradeLevel !== totalLvl) {
+    entity.hairs = null;
+    entity.hairDensityBonus = hairDensityBonus;
+    entity.lastUpgradeLevel = totalLvl;
+  }
+
   // Initialize hairs if not present - aligned with hexagon edges (irregular)
   if (!entity.hairs) {
     entity.hairs = [];
 
     for (let edgeIndex = 0; edgeIndex < 6; edgeIndex++) {
-      // Random number of hairs per edge (4-10 hairs)
-      const hairsPerEdge = Math.floor(4 + Math.random() * 7);
+      // Random number of hairs per edge (4-10 hairs) + upgrade bonus
+      const baseHairs = Math.floor(4 + Math.random() * 7);
+      const hairsPerEdge = baseHairs + (entity.hairDensityBonus || 0);
 
       // Get the two vertices of this edge
       const angle1 = (Math.PI / 3) * edgeIndex;
@@ -2809,8 +2962,9 @@ function drawCell(entity, isMe, isSelected) {
         // Calculate outward direction from center (0,0) to this point on the edge
         const outwardAngle = Math.atan2(baseY, baseX);
 
-        // Much more irregular hair lengths (2-8 pixels, wider range)
-        const length = 2 + Math.random() * 6;
+        // Much more irregular hair lengths (2-8 pixels, wider range) + strength bonus
+        const strengthBonus = (entity.strengthLevel || 0) * 0.8; // +0.8 length per strength level
+        const length = 2 + Math.random() * 6 + strengthBonus;
 
         entity.hairs.push({
           baseX: baseX,
@@ -2876,10 +3030,26 @@ function drawCell(entity, isMe, isSelected) {
   const swimAngle = Math.sin(swimPhase) * 0.08; // Gentle rotation
   const swimPulse = Math.sin(swimPhase * 1.5) * 0.03; // Slight pulsing
 
+  // Draw upgrade glow aura (before main cell)
+  if (upgradeGlow > 0 && isMe) {
+    ctx.save();
+    ctx.translate(x, y);
+    const glowRadius = entity.radius * upgradeSizeBonus * 1.6;
+    const gradient = ctx.createRadialGradient(0, 0, entity.radius * 0.8, 0, 0, glowRadius);
+    gradient.addColorStop(0, `rgba(100, 200, 255, ${upgradeGlow * 0.4})`);
+    gradient.addColorStop(0.5, `rgba(150, 220, 255, ${upgradeGlow * 0.2})`);
+    gradient.addColorStop(1, 'rgba(100, 200, 255, 0)');
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(0, 0, glowRadius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(entity.angle + swimAngle);
-  ctx.scale(1 + swimPulse, 1 + swimPulse);
+  ctx.scale((1 + swimPulse) * upgradeSizeBonus, (1 + swimPulse) * upgradeSizeBonus);
 
   // Apply squish effect if attacking
   if (entity.attackSquish) {
@@ -2914,6 +3084,15 @@ function drawCell(entity, isMe, isSelected) {
 
   ctx.fillStyle = entity.color;
   ctx.fill();
+
+  // Health upgrade: inner highlight glow
+  if (healthLvl > 0 && isMe) {
+    const innerGlow = ctx.createRadialGradient(0, 0, 0, 0, 0, entity.radius * 0.9);
+    innerGlow.addColorStop(0, `rgba(200, 255, 200, ${healthLvl * 0.08})`);
+    innerGlow.addColorStop(1, 'rgba(200, 255, 200, 0)');
+    ctx.fillStyle = innerGlow;
+    ctx.fill();
+  }
 
   // Border - yellow for selected (only if 2+ creatures), white for own unselected
   if (isSelected && myTadpoles.length > 1) {
@@ -2995,7 +3174,79 @@ function drawCell(entity, isMe, isSelected) {
         ctx.fill();
       }
 
+      // Unfurling tail - starts curled, slowly straightens
+      if (organismSize > 2) {
+        const tailLength = organismSize * 2.5 * progress; // Grows with progress
+        const tailSegments = 8;
+        const curlAmount = (1 - progress) * Math.PI * 1.5; // Starts very curled, straightens out
+
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.lineWidth = Math.max(1, organismSize * 0.15);
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+
+        // Start from back of body
+        const startX = -organismSize * 0.8;
+        const startY = 0;
+        ctx.moveTo(startX, startY);
+
+        // Draw curved tail segments
+        let prevX = startX;
+        let prevY = startY;
+        for (let i = 1; i <= tailSegments; i++) {
+          const t = i / tailSegments;
+          const segmentLength = (tailLength / tailSegments) * (1 - t * 0.3); // Taper
+
+          // Curl decreases along the tail and as progress increases
+          const segmentCurl = curlAmount * t * (1 - progress * 0.5);
+          const baseAngle = Math.PI + segmentCurl; // Points backward, curls down
+
+          const nextX = prevX + Math.cos(baseAngle + Math.sin(Date.now() / 300 + i) * 0.1 * progress) * segmentLength;
+          const nextY = prevY + Math.sin(baseAngle + Math.sin(Date.now() / 300 + i) * 0.1 * progress) * segmentLength;
+
+          ctx.lineTo(nextX, nextY);
+          prevX = nextX;
+          prevY = nextY;
+        }
+        ctx.stroke();
+
+        // Tail gets thinner towards tip - draw again with gradient effect
+        ctx.lineWidth = Math.max(0.5, organismSize * 0.08);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.stroke();
+      }
+
       ctx.restore();
+    }
+  }
+
+  // Birth burst effect (when cell just gave birth)
+  if (entity.birthBurstTime) {
+    const burstElapsed = Date.now() - entity.birthBurstTime;
+    const burstDuration = 500; // 0.5 second burst
+
+    if (burstElapsed < burstDuration) {
+      const burstProgress = burstElapsed / burstDuration;
+      const burstRadius = entity.radius * (1 + burstProgress * 2);
+      const burstAlpha = (1 - burstProgress) * 0.6;
+
+      // Expanding ring
+      ctx.strokeStyle = `rgba(100, 200, 255, ${burstAlpha})`;
+      ctx.lineWidth = 4 * (1 - burstProgress);
+      ctx.beginPath();
+      ctx.arc(x, y, burstRadius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Inner glow
+      const glowGradient = ctx.createRadialGradient(x, y, 0, x, y, entity.radius * 1.5);
+      glowGradient.addColorStop(0, `rgba(255, 255, 255, ${burstAlpha * 0.5})`);
+      glowGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      ctx.fillStyle = glowGradient;
+      ctx.beginPath();
+      ctx.arc(x, y, entity.radius * 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      entity.birthBurstTime = null;
     }
   }
 
@@ -3013,36 +3264,95 @@ function drawCell(entity, isMe, isSelected) {
   }
 }
 
+// Update explored regions based on creature positions
+function updateExploredRegions() {
+  myTadpoles.forEach(tad => {
+    // Mark current region and nearby regions as explored (vision radius)
+    const visionRadius = 1; // How many regions around the creature are visible
+    const rx = Math.floor(tad.x / FOG_REGION_SIZE);
+    const ry = Math.floor(tad.y / FOG_REGION_SIZE);
+
+    for (let dx = -visionRadius; dx <= visionRadius; dx++) {
+      for (let dy = -visionRadius; dy <= visionRadius; dy++) {
+        exploredRegions.add(`${rx + dx},${ry + dy}`);
+      }
+    }
+  });
+}
+
+// Check if a world position is in an explored region
+function isExplored(worldX, worldY) {
+  const rx = Math.floor(worldX / FOG_REGION_SIZE);
+  const ry = Math.floor(worldY / FOG_REGION_SIZE);
+  return exploredRegions.has(`${rx},${ry}`);
+}
+
 function drawMinimap() {
   const minimapSize = 150;
   const minimapPadding = 20;
   const minimapX = minimapPadding;
   const minimapY = minimapPadding;
-  const scale = minimapSize / WORLD_SIZE;
 
-  // Background
-  ctx.fillStyle = 'rgba(10, 14, 26, 0.8)';
+  // Center minimap around player's position
+  const playerX = myTadpoles.length > 0 ? myTadpoles[0].x : 0;
+  const playerY = myTadpoles.length > 0 ? myTadpoles[0].y : 0;
+
+  // Dynamic zoom: minimap zooms out as player moves further from origin
+  // Base size is 2000, but expands to show player's distance from origin
+  const distFromOrigin = Math.sqrt(playerX * playerX + playerY * playerY);
+  const minWorldSize = 2000;
+  const padding = 500; // Extra space around player position
+  const minimapWorldSize = Math.max(minWorldSize, (distFromOrigin + padding) * 2);
+  const scale = minimapSize / minimapWorldSize;
+
+  // Background - darker for unexplored feel
+  ctx.fillStyle = 'rgba(5, 8, 15, 0.9)';
   ctx.fillRect(minimapX, minimapY, minimapSize, minimapSize);
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(minimapX, minimapY, minimapSize, minimapSize);
 
-  // Center marker
-  const centerX = minimapX + minimapSize / 2;
-  const centerY = minimapY + minimapSize / 2;
-  ctx.fillStyle = 'rgba(150, 180, 220, 0.3)';
+  // Set up clipping region to ensure nothing draws outside minimap
+  ctx.save();
   ctx.beginPath();
-  ctx.arc(centerX, centerY, 2, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.rect(minimapX, minimapY, minimapSize, minimapSize);
+  ctx.clip();
 
-  // Draw entities on minimap
+  // Draw explored regions as lighter areas
+  const regionScaleSize = FOG_REGION_SIZE * scale;
+  ctx.fillStyle = 'rgba(20, 28, 45, 0.8)';
+  exploredRegions.forEach(key => {
+    const [rx, ry] = key.split(',').map(Number);
+    const regionWorldX = rx * FOG_REGION_SIZE;
+    const regionWorldY = ry * FOG_REGION_SIZE;
+    // Position relative to player (player is at center of minimap)
+    const regionMapX = minimapX + minimapSize / 2 + (regionWorldX - playerX) * scale;
+    const regionMapY = minimapY + minimapSize / 2 + (regionWorldY - playerY) * scale;
+
+    ctx.fillRect(regionMapX, regionMapY, regionScaleSize, regionScaleSize);
+  });
+
+  // Draw world origin marker (0,0) if visible
+  const originMapX = minimapX + minimapSize / 2 + (0 - playerX) * scale;
+  const originMapY = minimapY + minimapSize / 2 + (0 - playerY) * scale;
+  if (originMapX >= minimapX && originMapX <= minimapX + minimapSize &&
+      originMapY >= minimapY && originMapY <= minimapY + minimapSize &&
+      isExplored(0, 0)) {
+    ctx.fillStyle = 'rgba(150, 180, 220, 0.5)';
+    ctx.beginPath();
+    ctx.arc(originMapX, originMapY, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Draw entities on minimap (only if in explored region)
   const drawOnMinimap = (entity) => {
-    let mapX = minimapX + (entity.x + WORLD_SIZE / 2) * scale;
-    let mapY = minimapY + (entity.y + WORLD_SIZE / 2) * scale;
+    // Fog of war check - only show entities in explored regions
+    if (!isExplored(entity.x, entity.y)) return;
 
-    // Clamp to minimap bounds
-    mapX = Math.max(minimapX, Math.min(minimapX + minimapSize, mapX));
-    mapY = Math.max(minimapY, Math.min(minimapY + minimapSize, mapY));
+    // Player-centered coordinates
+    let mapX = minimapX + minimapSize / 2 + (entity.x - playerX) * scale;
+    let mapY = minimapY + minimapSize / 2 + (entity.y - playerY) * scale;
+
+    // Skip if outside minimap bounds
+    if (mapX < minimapX || mapX > minimapX + minimapSize ||
+        mapY < minimapY || mapY > minimapY + minimapSize) return;
 
     if (entity.type === 'cell') {
       // Draw hexagon
@@ -3060,7 +3370,7 @@ function drawMinimap() {
         }
       }
       ctx.closePath();
-      ctx.fillStyle = 'rgba(100, 200, 255, 1)';
+      ctx.fillStyle = 'rgba(255, 100, 100, 0.9)'; // Red for enemy cells
       ctx.fill();
       ctx.restore();
     } else {
@@ -3074,12 +3384,17 @@ function drawMinimap() {
   Object.values(npcs).forEach(drawOnMinimap);
   Object.values(players).forEach(drawOnMinimap);
 
-  myTadpoles.forEach(tad => {
-    let mapX = minimapX + (tad.x + WORLD_SIZE / 2) * scale;
-    let mapY = minimapY + (tad.y + WORLD_SIZE / 2) * scale;
-
-    mapX = Math.max(minimapX, Math.min(minimapX + minimapSize, mapX));
-    mapY = Math.max(minimapY, Math.min(minimapY + minimapSize, mapY));
+  // Always draw own tadpoles at center (green/blue)
+  myTadpoles.forEach((tad, index) => {
+    // First tadpole is always at center, others relative to it
+    let mapX, mapY;
+    if (index === 0) {
+      mapX = minimapX + minimapSize / 2;
+      mapY = minimapY + minimapSize / 2;
+    } else {
+      mapX = minimapX + minimapSize / 2 + (tad.x - playerX) * scale;
+      mapY = minimapY + minimapSize / 2 + (tad.y - playerY) * scale;
+    }
 
     if (tad.type === 'cell') {
       ctx.save();
@@ -3107,22 +3422,13 @@ function drawMinimap() {
     }
   });
 
-  // Draw camera view box - constrained to minimap
-  const viewWidth = canvas.width;
-  const viewHeight = canvas.height;
-  const viewBoxWidth = Math.min(viewWidth * scale, minimapSize);
-  const viewBoxHeight = Math.min(viewHeight * scale, minimapSize);
+  // Restore canvas state (removes clipping)
+  ctx.restore();
 
-  let viewBoxX = minimapX + (camera.x - viewWidth / 2 + WORLD_SIZE / 2) * scale;
-  let viewBoxY = minimapY + (camera.y - viewHeight / 2 + WORLD_SIZE / 2) * scale;
-
-  // Constrain view box to stay within minimap
-  viewBoxX = Math.max(minimapX, Math.min(minimapX + minimapSize - viewBoxWidth, viewBoxX));
-  viewBoxY = Math.max(minimapY, Math.min(minimapY + minimapSize - viewBoxHeight, viewBoxY));
-
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(viewBoxX, viewBoxY, viewBoxWidth, viewBoxHeight);
+  // Draw border on top (outside clipping region)
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(minimapX, minimapY, minimapSize, minimapSize);
 }
 
 function hexToRGBA(hex, alpha) {
@@ -3132,8 +3438,38 @@ function hexToRGBA(hex, alpha) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+// Fixed timestep game loop for frame-rate independent physics
+const PHYSICS_FPS = 60;
+const PHYSICS_TIMESTEP = 1000 / PHYSICS_FPS; // 16.67ms per physics step
+let lastFrameTime = performance.now();
+let lastRenderTime = performance.now();
+let accumulatedTime = 0;
+let renderDeltaTime = PHYSICS_TIMESTEP; // For frame-rate independent interpolation
+
 function gameLoop() {
-  update();
+  const now = performance.now();
+  const frameTime = now - lastFrameTime;
+  lastFrameTime = now;
+
+  // Track render delta time for frame-rate independent visual interpolation
+  renderDeltaTime = now - lastRenderTime;
+  lastRenderTime = now;
+
+  // Cap accumulated time to prevent spiral of death on slow frames
+  accumulatedTime += Math.min(frameTime, 100);
+
+  // Run physics updates at fixed timestep
+  while (accumulatedTime >= PHYSICS_TIMESTEP) {
+    update(1); // Always 1 physics step
+    accumulatedTime -= PHYSICS_TIMESTEP;
+  }
+
+  // Visual interpolation runs once per render frame (frame-rate independent)
+  interpolateVisuals();
+
+  // Update fog of war explored regions
+  updateExploredRegions();
+
   render();
   updateStatsDisplay();
   requestAnimationFrame(gameLoop);

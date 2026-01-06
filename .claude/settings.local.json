@@ -1,7 +1,18 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm start)"
+      "Bash(npm start)",
+      "Bash(gh repo create:*)",
+      "Bash(git remote add:*)",
+      "Bash(git push:*)",
+      "Bash(gh auth:*)",
+      "Bash(lsof:*)",
+      "Bash(chmod:*)",
+      "Bash(node -e:*)",
+      "Bash(npx acorn:*)",
+      "Bash(node --check:*)",
+      "Bash(pkill:*)",
+      "Bash(cat:*)"
     ]
   }
 }

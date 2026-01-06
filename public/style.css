@@ -124,6 +124,10 @@ body {
   transform: scale(0.98);
 }
 
+.menu-item.hidden {
+  display: none;
+}
+
 .selection-count {
   padding: 8px 12px;
   color: rgba(255, 255, 255, 0.9);
