@@ -31,17 +31,17 @@ let npcs = {};
 let npcIdCounter = 0;
 
 // NPC Constants (must match client)
-const NPC_MOVE_SPEED = 0.03;
+const NPC_MOVE_SPEED = 0.034; // 20% slower top speed
 const FRICTION = 0.988;
 const ARRIVAL_THRESHOLD = 30;
 const NPC_TADPOLE_RADIUS = 11.2;
 const NPC_CELL_RADIUS = 40;
-const NPC_TADPOLE_HEALTH = 70;
+const NPC_TADPOLE_HEALTH = 80; // NPCs tankier than players
 const NPC_CELL_HEALTH = 200;
 const NPC_MAX_HEALTH = 100;
 const NPC_HEALTH_REGEN_RATE = 0.015;
-const ATTACK_DAMAGE = 18;
-const NPC_TADPOLE_DAMAGE = 18;
+const ATTACK_DAMAGE = 14; // Player base damage (weak at start)
+const NPC_TADPOLE_DAMAGE = 20; // NPCs hit harder than players
 const NPC_CELL_DAMAGE = 30;
 const ATTACK_RANGE = 80;
 const NPC_ATTACK_COOLDOWN = 700;
@@ -50,7 +50,7 @@ const CELL_DAMAGE_RESISTANCE = 0.6;
 // Initialize NPCs
 function initializeNPCs() {
   npcs = {};
-  const totalNPCs = 15;
+  const totalNPCs = 9; // 3 cells + 6 tadpoles (50% less tadpoles)
   const npcCellCount = 3;
 
   for (let i = 0; i < totalNPCs; i++) {
@@ -153,19 +153,28 @@ function updateNPC(npc) {
       // Chase the player
       if (dist > ATTACK_RANGE * 0.8) {
         const chaseAngle = Math.atan2(-dy, -dx);
-        const chaseSpeed = NPC_MOVE_SPEED * (npc.type === 'cell' ? 0.8 : 1.5);
-        npc.vx += Math.cos(chaseAngle) * chaseSpeed;
-        npc.vy += Math.sin(chaseAngle) * chaseSpeed;
 
-        // Cells deplete energy while chasing
+        let chaseSpeed;
         if (npc.type === 'cell') {
-          npc.chaseEnergy -= 0.5;
+          // Cells can sprint (2x speed) while they have energy
+          const isSprinting = npc.chaseEnergy > 0;
+          chaseSpeed = NPC_MOVE_SPEED * (isSprinting ? 1.6 : 0.5); // Sprint or exhausted crawl
+          npc.isSprinting = isSprinting;
+
+          // Deplete energy faster while sprinting
+          npc.chaseEnergy -= 1.5;
           if (npc.chaseEnergy <= 0) {
             npc.isTired = true;
             npc.tiredStartTime = now;
             npc.chaseEnergy = 0;
           }
+        } else {
+          // NPC tadpoles move at same speed as player tadpoles
+          chaseSpeed = NPC_MOVE_SPEED;
         }
+
+        npc.vx += Math.cos(chaseAngle) * chaseSpeed;
+        npc.vy += Math.sin(chaseAngle) * chaseSpeed;
       }
 
       // Attack when in range
@@ -213,7 +222,8 @@ function updateNPC(npc) {
       npc.vx *= 0.985;
       npc.vy *= 0.985;
     } else {
-      let moveSpeed = npc.type === 'cell' ? NPC_MOVE_SPEED * 0.5 : NPC_MOVE_SPEED;
+      // Cells wander slowly, tadpoles at normal speed
+      let moveSpeed = npc.type === 'cell' ? NPC_MOVE_SPEED * 0.35 : NPC_MOVE_SPEED;
       const decelerationZone = ARRIVAL_THRESHOLD * 2;
       if (dist < decelerationZone) {
         const speedMultiplier = 0.5 + 0.5 * (dist - ARRIVAL_THRESHOLD) / (decelerationZone - ARRIVAL_THRESHOLD);
@@ -225,9 +235,12 @@ function updateNPC(npc) {
   }
 
   // NPC vs NPC combat (rare)
+  // Cells only attack tadpoles, not other cells
   if (!npc.attackTarget && Math.random() < 0.001) {
     const nearbyNPCs = Object.values(npcs).filter(other => {
       if (other.id === npc.id) return false;
+      // Cells only target tadpoles, not other cells
+      if (npc.type === 'cell' && other.type === 'cell') return false;
       const dx = other.x - npc.x;
       const dy = other.y - npc.y;
       return Math.sqrt(dx * dx + dy * dy) < 200;
@@ -333,8 +346,10 @@ function handleNPCDeath(npc) {
   const deathY = npc.y;
   const wasCell = npc.type === 'cell';
 
-  // Spawn death food
-  const foodCount = wasCell ? 8 : 5;
+  // Spawn death food (random amount)
+  const foodCount = wasCell
+    ? 4 + Math.floor(Math.random() * 3)   // Cells: 4-6
+    : 2 + Math.floor(Math.random() * 4);  // Tadpoles: 2-5
   for (let i = 0; i < foodCount; i++) {
     const id = `food_${foodIdCounter++}`;
     const angle = (Math.PI * 2 / foodCount) * i;
@@ -346,7 +361,9 @@ function handleNPCDeath(npc) {
       id,
       x: deathX + Math.cos(angle) * dist,
       y: deathY + Math.sin(angle) * dist,
-      radius: baseRadius * sizeVariation
+      radius: baseRadius * sizeVariation,
+      spawnTime: Date.now(),
+      ttl: 30000 + Math.random() * 60000 // 30-90 seconds lifespan
     };
     io.emit('foodSpawned', food[id]);
   }
@@ -354,16 +371,25 @@ function handleNPCDeath(npc) {
   // Broadcast death effect
   io.emit('npcDied', { id: npc.id, x: deathX, y: deathY, radius: npc.radius });
 
-  // Respawn NPC elsewhere (cells spawn far from center)
-  if (npc.type === 'cell') {
-    const minDistFromCenter = 800;
-    do {
-      npc.x = (Math.random() - 0.5) * 4000;
-      npc.y = (Math.random() - 0.5) * 4000;
-    } while (Math.sqrt(npc.x * npc.x + npc.y * npc.y) < minDistFromCenter);
+  // Respawn NPC near an active player to maintain density around players
+  const activePlayers = Object.values(players).filter(p => !p.isInactive && !p.isIdle);
+
+  if (activePlayers.length > 0) {
+    // Pick a random active player
+    const targetPlayer = activePlayers[Math.floor(Math.random() * activePlayers.length)];
+
+    // Spawn at a random distance/angle from that player
+    const angle = Math.random() * Math.PI * 2;
+    const minDist = npc.type === 'cell' ? 600 : 300; // Cells spawn further away
+    const maxDist = npc.type === 'cell' ? 1200 : 800;
+    const dist = minDist + Math.random() * (maxDist - minDist);
+
+    npc.x = targetPlayer.x + Math.cos(angle) * dist;
+    npc.y = targetPlayer.y + Math.sin(angle) * dist;
   } else {
-    npc.x = (Math.random() - 0.5) * 4000;
-    npc.y = (Math.random() - 0.5) * 4000;
+    // No active players, spawn near center
+    npc.x = (Math.random() - 0.5) * 2000;
+    npc.y = (Math.random() - 0.5) * 2000;
   }
   npc.vx = 0;
   npc.vy = 0;
@@ -391,6 +417,88 @@ setInterval(() => {
   io.emit('npcUpdate', npcs);
 }, NPC_UPDATE_INTERVAL);
 
+// Periodically relocate NPCs that have wandered too far from all players
+setInterval(() => {
+  const activePlayers = Object.values(players).filter(p => !p.isInactive && !p.isIdle);
+  if (activePlayers.length === 0) return;
+
+  const MAX_DIST_FROM_NEAREST_PLAYER = 1500;
+
+  for (let npcId in npcs) {
+    const npc = npcs[npcId];
+
+    // Find distance to nearest player
+    let nearestDist = Infinity;
+    let nearestPlayer = null;
+    for (let player of activePlayers) {
+      const dx = npc.x - player.x;
+      const dy = npc.y - player.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearestPlayer = player;
+      }
+    }
+
+    // If too far from all players, relocate near a random player
+    if (nearestDist > MAX_DIST_FROM_NEAREST_PLAYER) {
+      const targetPlayer = activePlayers[Math.floor(Math.random() * activePlayers.length)];
+      const angle = Math.random() * Math.PI * 2;
+      const minDist = npc.type === 'cell' ? 600 : 300;
+      const maxDist = npc.type === 'cell' ? 1200 : 800;
+      const dist = minDist + Math.random() * (maxDist - minDist);
+
+      npc.x = targetPlayer.x + Math.cos(angle) * dist;
+      npc.y = targetPlayer.y + Math.sin(angle) * dist;
+      npc.vx = 0;
+      npc.vy = 0;
+      npc.moveTarget = null;
+    }
+  }
+}, 5000); // Check every 5 seconds
+
+// Food expiration and respawn - maintain constant food density
+const TARGET_FOOD_COUNT = 38; // Increased by 50%
+setInterval(() => {
+  const now = Date.now();
+  let expiredCount = 0;
+
+  // Remove expired food
+  for (let foodId in food) {
+    const foodItem = food[foodId];
+    if (foodItem.spawnTime && foodItem.ttl) {
+      if (now - foodItem.spawnTime > foodItem.ttl) {
+        io.emit('foodEaten', { foodId }); // Reuse eaten event to remove on clients
+        delete food[foodId];
+        expiredCount++;
+      }
+    }
+  }
+
+  // Respawn food at random locations to maintain natural density
+  const currentCount = Object.keys(food).length;
+
+  if (currentCount < TARGET_FOOD_COUNT) {
+    const toSpawn = Math.min(3, TARGET_FOOD_COUNT - currentCount); // Spawn up to 3 at a time
+
+    for (let i = 0; i < toSpawn; i++) {
+      const id = `food_${foodIdCounter++}`;
+      const baseRadius = 4;
+      const sizeVariation = 0.75 + Math.random() * 0.5;
+
+      food[id] = {
+        id,
+        x: (Math.random() - 0.5) * 4000, // Random location in world
+        y: (Math.random() - 0.5) * 4000,
+        radius: baseRadius * sizeVariation,
+        spawnTime: now,
+        ttl: 30000 + Math.random() * 60000
+      };
+      io.emit('foodSpawned', food[id]);
+    }
+  }
+}, 3000); // Check every 3 seconds
+
 // Initialize NPCs on startup
 initializeNPCs();
 
@@ -412,7 +520,9 @@ function generateFood(count) {
       id,
       x,
       y,
-      radius
+      radius,
+      spawnTime: Date.now(),
+      ttl: 30000 + Math.random() * 60000 // 30-90 seconds lifespan
     };
   }
 }
@@ -420,7 +530,7 @@ function generateFood(count) {
 // Clear all existing food and initialize
 food = {}; // Clear all existing food
 foodIdCounter = 0; // Reset counter
-generateFood(50); // Start with reasonable amount of food
+generateFood(38); // Start with reasonable amount of food
 
 // Load players from JSON file
 async function loadPlayers() {
@@ -697,7 +807,7 @@ io.on('connection', (socket) => {
     // Regenerate food
     food = {};
     foodIdCounter = 0;
-    generateFood(20); // Start with some food
+    generateFood(15); // Start with some food
 
     // Reinitialize NPCs using server's NPC system
     initializeNPCs();

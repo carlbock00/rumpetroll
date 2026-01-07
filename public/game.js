@@ -12,6 +12,7 @@ const restartBtn = document.getElementById('restartBtn');
 const healthStat = document.getElementById('healthStat');
 const strengthStat = document.getElementById('strengthStat');
 const foodStat = document.getElementById('foodStat');
+const foodCapacityStat = document.getElementById('foodCapacityStat');
 const creatureList = document.getElementById('creatureList');
 const upgradeMenu = document.getElementById('upgradeMenu');
 const upgradeCloseBtn = document.getElementById('upgradeCloseBtn');
@@ -20,8 +21,11 @@ const buyStrengthBtn = document.getElementById('buyStrengthBtn');
 const transformCellBtn = document.getElementById('transformCellBtn');
 const healthUpgradeLevelEl = document.getElementById('healthUpgradeLevel');
 const strengthUpgradeLevelEl = document.getElementById('strengthUpgradeLevel');
+const capacityUpgradeLevelEl = document.getElementById('capacityUpgradeLevel');
 const healthUpgradeCostEl = document.getElementById('healthUpgradeCost');
 const strengthUpgradeCostEl = document.getElementById('strengthUpgradeCost');
+const capacityUpgradeCostEl = document.getElementById('capacityUpgradeCost');
+const buyCapacityBtn = document.getElementById('buyCapacityBtn');
 
 // Delegated click handler for creature list
 creatureList.addEventListener('click', (e) => {
@@ -140,6 +144,7 @@ let isDead = false;
 let deathEffects = []; // Array of death splat effects
 let particles = []; // Ambient floating particles
 let damageTexts = []; // Array of damage text instances
+let vanishingFood = []; // Food items that are fading out
 let waitingForSupportTarget = false; // True when selecting a creature to support
 let supportSourceId = null; // ID of creature that will do the supporting
 let lastCreatureCount = 0; // Track when to rebuild creature list
@@ -167,11 +172,16 @@ const HEALTH_BONUSES = [25, 55, 95, 145, 200]; // +25, +30, +40, +50, +55
 const STRENGTH_BONUSES = [8, 18, 32, 50, 75];  // +8, +10, +14, +18, +25
 
 // Food capacity
-const TADPOLE_FOOD_CAPACITY = 30;
+const TADPOLE_BASE_FOOD_CAPACITY = 10; // Starting capacity
+const TADPOLE_MAX_FOOD_CAPACITY = 30; // After full upgrades
 const CELL_FOOD_CAPACITY = 50;
+const FOOD_CAPACITY_BONUSES = [7, 14, 20]; // +7, +7, +6 = 20 total (10 → 30)
+const MAX_CAPACITY_LEVEL = 3;
+const CAPACITY_UPGRADE_COSTS = [3, 5, 8]; // Cheaper since only 3 levels
 
 // Hibernation
 const HIBERNATION_DURATION = 1 * 60 * 1000; // 1 minute for testing
+const TRANSFORMATION_DURATION = 10 * 1000; // 10 seconds to transform to cell
 
 // Camera system
 let camera = {
@@ -187,8 +197,8 @@ let attackTarget = null;
 
 // Constants
 const INTERPOLATION_FACTOR = 0.2;
-const MOVE_SPEED = 0.06; // Reduced top speed by 40%
-const NPC_MOVE_SPEED = 0.03; // 2x slower
+const MOVE_SPEED = 0.034; // 20% slower top speed
+const NPC_MOVE_SPEED = 0.034; // Same as player tadpoles
 const FRICTION = 0.988; // Balanced: quick accel, natural gliding
 const CAMERA_SMOOTHING = 0.1;
 const ARRIVAL_THRESHOLD = 30; // ~1.5 tadpole lengths - comfortable arrival distance
@@ -202,17 +212,17 @@ const TADPOLE_RADIUS = 9; // Player tadpoles - smaller
 const NPC_TADPOLE_RADIUS = 11.2; // NPCs are bigger
 const CELL_RADIUS = 30; // Player cells
 const NPC_CELL_RADIUS = 40; // NPC cells are bigger than player cells
-// Combat stats - Base values (balanced for close vanilla fights)
-const MAX_HEALTH = 80; // Player base health
-const NPC_TADPOLE_HEALTH = 70; // NPC tadpoles - slightly tankier
+// Combat stats - NPCs have advantage until player upgrades
+const MAX_HEALTH = 70; // Player base health (weak at start)
+const NPC_TADPOLE_HEALTH = 80; // NPC tadpoles - tankier than players
 const NPC_CELL_HEALTH = 200; // NPC cells - very tanky
 const NPC_MAX_HEALTH = 100; // Default NPC health (used for generic NPCs)
 const HEALTH_REGEN_RATE = 0.02; // HP per frame (~1.2 HP/sec at 60fps)
 const NPC_HEALTH_REGEN_RATE = 0.015; // NPCs regen a bit faster
 
-// Attack stats - vanilla fights are close, upgrades make you strong
-const ATTACK_DAMAGE = 18; // Base player damage - fights take 4 hits
-const NPC_TADPOLE_DAMAGE = 18; // NPC tadpoles hit equally hard!
+// Attack stats - NPCs win 1v1 until 2 upgrades
+const ATTACK_DAMAGE = 14; // Base player damage (weak at start)
+const NPC_TADPOLE_DAMAGE = 20; // NPC tadpoles hit harder than players!
 const NPC_CELL_DAMAGE = 30; // NPC cells hit harder
 const ATTACK_RANGE = 80; // Tighter attack range
 const TADPOLE_ATTACK_COOLDOWN = 650; // ms - slightly slower player attacks
@@ -239,6 +249,17 @@ function getWaveOffset(x, y, time) {
   };
 }
 
+// Get food capacity for a creature
+function getFoodCapacity(tad) {
+  if (tad.type === 'cell') {
+    return CELL_FOOD_CAPACITY;
+  }
+  // Tadpole: base + upgrade bonuses
+  const capacityLevel = tad.capacityLevel || 0;
+  const bonus = capacityLevel > 0 ? FOOD_CAPACITY_BONUSES[capacityLevel - 1] : 0;
+  return TADPOLE_BASE_FOOD_CAPACITY + bonus;
+}
+
 // Update stats display
 function updateStatsDisplay() {
   // Show stats for selected tadpole, or first tadpole if none selected
@@ -255,10 +276,12 @@ function updateStatsDisplay() {
     healthStat.textContent = Math.round(displayTad.health);
     strengthStat.textContent = Math.round(playerStrength);
     foodStat.textContent = displayTad.food || 0;
+    foodCapacityStat.textContent = getFoodCapacity(displayTad);
   } else {
     healthStat.textContent = '0';
     strengthStat.textContent = '0';
     foodStat.textContent = '0';
+    foodCapacityStat.textContent = '0';
   }
 }
 
@@ -463,11 +486,20 @@ socket.on('food', (serverFood) => {
 
 socket.on('foodSpawned', (newFood) => {
   if (newFood) {
+    newFood.spawnTime = Date.now(); // For spawn animation
     food[newFood.id] = newFood;
   }
 });
 
 socket.on('foodEaten', (data) => {
+  // Save food item for vanishing animation before deleting
+  const foodItem = food[data.foodId];
+  if (foodItem) {
+    vanishingFood.push({
+      ...foodItem,
+      vanishTime: Date.now()
+    });
+  }
   delete food[data.foodId];
   // Server doesn't track individual tadpole food, so we handle it client-side
 });
@@ -503,6 +535,13 @@ socket.on('npcUpdate', (serverNpcs) => {
     if (npcs[serverNpc.id]) {
       // Update existing NPC
       const npc = npcs[serverNpc.id];
+
+      // Check if NPC was teleported (large position change) - skip interpolation
+      const dx = serverNpc.x - npc.x;
+      const dy = serverNpc.y - npc.y;
+      const distChange = Math.sqrt(dx * dx + dy * dy);
+      const wasTeleported = distChange > 500; // Teleport threshold
+
       npc.x = serverNpc.x;
       npc.y = serverNpc.y;
       npc.vx = serverNpc.vx;
@@ -511,11 +550,21 @@ socket.on('npcUpdate', (serverNpcs) => {
       npc.provoked = serverNpc.provoked;
       npc.isTired = serverNpc.isTired;
       npc.chaseEnergy = serverNpc.chaseEnergy;
-      npc.attackLungeTime = serverNpc.attackLungeTime;
+      // Convert server lunge time to client time - if it's a new attack, use current time
+      if (serverNpc.attackLungeTime && serverNpc.attackLungeTime !== npc.lastServerLungeTime) {
+        npc.attackLungeTime = Date.now(); // Use client time for animation
+        npc.lastServerLungeTime = serverNpc.attackLungeTime;
+      }
       npc.attackLungeAngle = serverNpc.attackLungeAngle;
-      // Smooth interpolation for render position
-      if (!npc.renderX) npc.renderX = npc.x;
-      if (!npc.renderY) npc.renderY = npc.y;
+
+      // If teleported, snap render position immediately (no interpolation)
+      if (wasTeleported) {
+        npc.renderX = npc.x;
+        npc.renderY = npc.y;
+      } else if (!npc.renderX) {
+        npc.renderX = npc.x;
+        npc.renderY = npc.y;
+      }
     } else {
       // New NPC - add it
       const npc = { ...serverNpc };
@@ -1197,35 +1246,49 @@ buyStrengthBtn.addEventListener('click', () => {
   }
 });
 
+buyCapacityBtn.addEventListener('click', () => {
+  if (selectedTadpoles.size > 0) {
+    const selectedId = Array.from(selectedTadpoles)[0];
+    const selectedTad = myTadpoles.find(t => t.id === selectedId);
+
+    // Only tadpoles can upgrade capacity (cells have fixed high capacity)
+    if (!selectedTad || selectedTad.type === 'cell') return;
+
+    // Check if max level reached
+    const capacityLevel = selectedTad.capacityLevel || 0;
+    if (capacityLevel >= MAX_CAPACITY_LEVEL) return;
+
+    const cost = CAPACITY_UPGRADE_COSTS[capacityLevel];
+
+    if ((selectedTad.food || 0) >= cost) {
+      // Deduct cost
+      selectedTad.food = (selectedTad.food || 0) - cost;
+
+      // Increase capacity level for this tadpole
+      selectedTad.capacityLevel = capacityLevel + 1;
+
+      updateUpgradeMenu();
+      updateSelectionCount();
+    }
+  }
+});
+
 transformCellBtn.addEventListener('click', () => {
   if (selectedTadpoles.size > 0) {
     const selectedId = Array.from(selectedTadpoles)[0];
     const selectedTad = myTadpoles.find(t => t.id === selectedId);
 
-    if (selectedTad && selectedTad.type === 'tadpole' && (selectedTad.food || 0) >= 5) {
+    if (selectedTad && selectedTad.type === 'tadpole' && (selectedTad.food || 0) >= 20) {
+      // Check if already transforming
+      if (selectedTad.isTransforming) return;
+
       // Deduct cost from selected tadpole
-      selectedTad.food = (selectedTad.food || 0) - 5;
+      selectedTad.food = (selectedTad.food || 0) - 20;
 
-      // Upgrade to cell
-      selectedTad.type = 'cell';
-      selectedTad.radius = CELL_RADIUS;
-      selectedTad.color = '#4a5f7f'; // Less dark hue of dark blue
-
-      // Notify server of type change for NPC aggression logic
-      socket.emit('updateType', { type: 'cell', radius: CELL_RADIUS });
-
-      // Clear tail and hairs completely - force fresh initialization
-      selectedTad.tail = null;
-      selectedTad.hairs = null;
-      selectedTad.trail = null;
-
-      // Ensure angle and wiggle offset are set for cell
-      if (!selectedTad.angle) {
-        selectedTad.angle = 0;
-      }
-      if (!selectedTad.wiggleOffset) {
-        selectedTad.wiggleOffset = Math.random() * Math.PI * 2;
-      }
+      // Start transformation process
+      selectedTad.isTransforming = true;
+      selectedTad.transformationStartTime = Date.now();
+      selectedTad.baseRadius = selectedTad.radius; // Store original radius
 
       // Close the upgrade menu
       upgradeMenu.classList.add('hidden');
@@ -1245,20 +1308,26 @@ function updateUpgradeMenu() {
   const currentFood = selectedTad.food || 0;
   const healthMaxed = healthUpgradeLevel >= MAX_UPGRADE_LEVEL;
   const strengthMaxed = strengthUpgradeLevel >= MAX_UPGRADE_LEVEL;
+  const capacityLevel = selectedTad.capacityLevel || 0;
+  const capacityMaxed = capacityLevel >= MAX_CAPACITY_LEVEL || selectedTad.type === 'cell';
   const healthCost = healthMaxed ? 0 : HEALTH_UPGRADE_COSTS[healthUpgradeLevel];
   const strengthCost = strengthMaxed ? 0 : STRENGTH_UPGRADE_COSTS[strengthUpgradeLevel];
+  const capacityCost = capacityMaxed ? 0 : CAPACITY_UPGRADE_COSTS[capacityLevel];
 
   // Update levels (show level/max)
   healthUpgradeLevelEl.textContent = `${healthUpgradeLevel}/${MAX_UPGRADE_LEVEL}`;
   strengthUpgradeLevelEl.textContent = `${strengthUpgradeLevel}/${MAX_UPGRADE_LEVEL}`;
+  capacityUpgradeLevelEl.textContent = `${capacityLevel}`;
 
   // Update costs (show MAX if maxed)
   healthUpgradeCostEl.textContent = healthMaxed ? 'MAX' : healthCost;
   strengthUpgradeCostEl.textContent = strengthMaxed ? 'MAX' : strengthCost;
+  capacityUpgradeCostEl.textContent = capacityMaxed ? 'MAX' : capacityCost;
 
   // Enable/disable buttons based on food availability and max level
   buyHealthBtn.disabled = healthMaxed || currentFood < healthCost;
   buyStrengthBtn.disabled = strengthMaxed || currentFood < strengthCost;
+  buyCapacityBtn.disabled = capacityMaxed || currentFood < capacityCost;
   transformCellBtn.disabled = selectedTad.type !== 'tadpole' || currentFood < 5;
 }
 
@@ -1337,7 +1406,7 @@ function updateCreatureList() {
     creatureName.textContent = nameText;
 
     // Create food capacity display
-    const foodCapacity = tad.type === 'cell' ? CELL_FOOD_CAPACITY : TADPOLE_FOOD_CAPACITY;
+    const foodCapacity = getFoodCapacity(tad);
     const currentFood = tad.food || 0;
     const foodSpan = document.createElement('span');
     foodSpan.className = 'creature-food';
@@ -1447,6 +1516,7 @@ function update(deltaTime = 1) {
 
   // Update NPC tails for rendering (NPC behavior is server-controlled)
   const time = Date.now() / 1000;
+  const now = Date.now();
   for (let npc of Object.values(npcs)) {
     // Only update tail animation for tadpoles
     if (npc.type === 'tadpole') {
@@ -1460,6 +1530,42 @@ function update(deltaTime = 1) {
     } else {
       npc.renderX = npc.x;
       npc.renderY = npc.y;
+    }
+
+    // Apply attack lunge animation for NPCs
+    if (npc.attackLungeTime && npc.attackLungeAngle !== undefined) {
+      const timeSinceLunge = now - npc.attackLungeTime;
+      if (timeSinceLunge < ATTACK_LUNGE_DURATION * 2.5) {
+        // Make NPC face the attack direction
+        npc.angle = npc.attackLungeAngle;
+
+        // Lunge forward then bob back
+        let lungeProgress;
+
+        if (timeSinceLunge < ATTACK_LUNGE_DURATION) {
+          // Lunge forward (0 to 1) - sudden jerky motion
+          lungeProgress = timeSinceLunge / ATTACK_LUNGE_DURATION;
+          lungeProgress = lungeProgress * lungeProgress; // Jerky easing
+        } else {
+          // Bob back (1 to 0) - slower
+          lungeProgress = 1 - (timeSinceLunge - ATTACK_LUNGE_DURATION) / ATTACK_LUNGE_DURATION;
+          lungeProgress = Math.max(0, Math.sqrt(lungeProgress)); // Ease out, clamp to 0
+        }
+
+        const lungeOffset = lungeProgress * ATTACK_LUNGE_DISTANCE;
+        npc.renderX += Math.cos(npc.attackLungeAngle) * lungeOffset;
+        npc.renderY += Math.sin(npc.attackLungeAngle) * lungeOffset;
+
+        // Add squish effect during recoil
+        if (timeSinceLunge >= ATTACK_LUNGE_DURATION && timeSinceLunge < ATTACK_LUNGE_DURATION * 2) {
+          npc.attackSquish = lungeProgress * 0.25;
+          npc.attackSquishAngle = npc.attackLungeAngle;
+        } else {
+          npc.attackSquish = 0;
+        }
+      } else {
+        npc.attackSquish = 0;
+      }
     }
   }
 
@@ -1965,7 +2071,7 @@ function update(deltaTime = 1) {
 
       if (distance < tad.radius + foodItem.radius) {
         // Check food capacity
-        const foodCapacity = tad.type === 'cell' ? CELL_FOOD_CAPACITY : TADPOLE_FOOD_CAPACITY;
+        const foodCapacity = getFoodCapacity(tad);
         const currentFood = tad.food || 0;
 
         if (currentFood < foodCapacity) {
@@ -2121,6 +2227,50 @@ function update(deltaTime = 1) {
       }
     }
 
+    // Check transformation completion
+    if (tad.isTransforming && tad.transformationStartTime) {
+      // Stop all movement while transforming
+      tad.vx *= 0.9;
+      tad.vy *= 0.9;
+
+      const elapsed = Date.now() - tad.transformationStartTime;
+      const progress = Math.min(elapsed / TRANSFORMATION_DURATION, 1);
+
+      // Gradually increase radius from tadpole to cell size
+      const startRadius = tad.baseRadius || TADPOLE_RADIUS;
+      tad.radius = startRadius + (CELL_RADIUS - startRadius) * progress;
+
+      if (elapsed >= TRANSFORMATION_DURATION) {
+        // Complete the transformation
+        tad.type = 'cell';
+        tad.radius = CELL_RADIUS;
+        tad.color = '#4a5f7f'; // Less dark hue of dark blue
+
+        // Notify server of type change for NPC aggression logic
+        socket.emit('updateType', { type: 'cell', radius: CELL_RADIUS });
+
+        // Clear tail and hairs completely - force fresh initialization
+        tad.tail = null;
+        tad.hairs = null;
+        tad.trail = null;
+
+        // Ensure angle and wiggle offset are set for cell
+        if (!tad.angle) {
+          tad.angle = 0;
+        }
+        if (!tad.wiggleOffset) {
+          tad.wiggleOffset = Math.random() * Math.PI * 2;
+        }
+
+        // End transformation
+        tad.isTransforming = false;
+        tad.transformationStartTime = null;
+        tad.baseRadius = null;
+
+        console.log('Transformation complete! Now a cell.');
+      }
+    }
+
     // Check death (unless invincibility mode is enabled)
     if (tad.health <= 0 && !invincibilityMode) {
       handleDeath(tad);
@@ -2194,7 +2344,6 @@ function update(deltaTime = 1) {
   }
 
   // Clean up expired death effects
-  const now = Date.now();
   deathEffects = deathEffects.filter(effect => now - effect.startTime < effect.duration);
 }
 
@@ -2451,25 +2600,109 @@ function render() {
 
   // Draw food
   Object.values(food).forEach(foodItem => {
+    // Spawn animation - pop effect
+    let scale = 1;
+    let glowAlpha = 0;
+    const spawnDuration = 300; // 300ms spawn animation
+
+    if (foodItem.spawnTime) {
+      const elapsed = Date.now() - foodItem.spawnTime;
+      if (elapsed < spawnDuration) {
+        const progress = elapsed / spawnDuration;
+        // Pop: start at 0, overshoot to 1.4, settle to 1
+        if (progress < 0.4) {
+          scale = (progress / 0.4) * 1.4;
+        } else {
+          const settleProgress = (progress - 0.4) / 0.6;
+          scale = 1.4 - 0.4 * settleProgress;
+        }
+        glowAlpha = (1 - progress) * 0.6;
+      } else {
+        // Animation complete, remove spawnTime
+        delete foodItem.spawnTime;
+      }
+    }
+
+    const drawRadius = foodItem.radius * scale;
+
+    // Spawn glow effect
+    if (glowAlpha > 0) {
+      ctx.beginPath();
+      ctx.arc(foodItem.x, foodItem.y, drawRadius * 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(200, 255, 200, ${glowAlpha * 0.4})`;
+      ctx.fill();
+    }
+
+    // Outer glow
     ctx.beginPath();
-    ctx.arc(foodItem.x, foodItem.y, foodItem.radius + 3, 0, Math.PI * 2);
+    ctx.arc(foodItem.x, foodItem.y, drawRadius + 3, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
     ctx.fill();
 
+    // Main food circle
     ctx.beginPath();
-    ctx.arc(foodItem.x, foodItem.y, foodItem.radius, 0, Math.PI * 2);
+    ctx.arc(foodItem.x, foodItem.y, drawRadius, 0, Math.PI * 2);
     ctx.fillStyle = '#FFFFFF';
     ctx.fill();
 
     // Cursor around food if targeting
     if (moveTarget && moveTarget.isFoodTarget && moveTarget.foodId === foodItem.id) {
       ctx.beginPath();
-      ctx.arc(foodItem.x, foodItem.y, foodItem.radius + 8, 0, Math.PI * 2);
+      ctx.arc(foodItem.x, foodItem.y, drawRadius + 8, 0, Math.PI * 2);
       ctx.strokeStyle = 'rgba(255, 255, 100, 0.8)';
       ctx.lineWidth = 2;
       ctx.stroke();
     }
   });
+
+  // Draw vanishing food with fade/shrink animation
+  const vanishDuration = 300; // 300ms vanish animation (same as spawn)
+  for (let i = vanishingFood.length - 1; i >= 0; i--) {
+    const foodItem = vanishingFood[i];
+    const elapsed = Date.now() - foodItem.vanishTime;
+
+    if (elapsed >= vanishDuration) {
+      // Animation complete, remove from array
+      vanishingFood.splice(i, 1);
+      continue;
+    }
+
+    const progress = elapsed / vanishDuration;
+    // Shrink from 1 to 0, with slight overshoot at start
+    let scale;
+    if (progress < 0.2) {
+      // Slight expand at start (1 to 1.15)
+      scale = 1 + (progress / 0.2) * 0.15;
+    } else {
+      // Then shrink to 0
+      const shrinkProgress = (progress - 0.2) / 0.8;
+      scale = 1.15 * (1 - shrinkProgress);
+    }
+
+    const alpha = 1 - progress;
+    const drawRadius = foodItem.radius * scale;
+
+    // Vanish glow effect (same as spawn glow but fading out)
+    const glowAlpha = alpha * 0.4;
+    if (glowAlpha > 0.05) {
+      ctx.beginPath();
+      ctx.arc(foodItem.x, foodItem.y, drawRadius * 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(200, 255, 200, ${glowAlpha * 0.4})`;
+      ctx.fill();
+    }
+
+    // Outer glow
+    ctx.beginPath();
+    ctx.arc(foodItem.x, foodItem.y, drawRadius + 3, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.3})`;
+    ctx.fill();
+
+    // Main food circle
+    ctx.beginPath();
+    ctx.arc(foodItem.x, foodItem.y, drawRadius, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+    ctx.fill();
+  }
 
   // Draw death splat effects
   const currentTime = Date.now();
@@ -2718,6 +2951,51 @@ function drawTadpole(entity, isMe, isNPC, isSelected) {
     ctx.translate(-x, -y);
   }
 
+  // Transformation animation (tadpole to cell)
+  let transformScale = 1;
+  let transformGlow = 0;
+  if (entity.isTransforming && entity.transformationStartTime) {
+    const elapsed = Date.now() - entity.transformationStartTime;
+    const progress = Math.min(elapsed / TRANSFORMATION_DURATION, 1);
+
+    // Pulsing effect during transformation
+    const pulse = Math.sin(elapsed / 200) * 0.1;
+    transformScale = 1 + pulse;
+
+    // Growing glow that intensifies toward the end
+    transformGlow = 0.3 + progress * 0.5;
+
+    // Draw transformation glow
+    ctx.save();
+    ctx.translate(x, y);
+
+    // Pulsing rings
+    const ringCount = 3;
+    for (let i = 0; i < ringCount; i++) {
+      const ringPhase = (elapsed / 500 + i / ringCount) % 1;
+      const ringRadius = entity.radius * (1 + ringPhase * 2);
+      const ringAlpha = (1 - ringPhase) * transformGlow * 0.5;
+
+      ctx.strokeStyle = `rgba(100, 150, 255, ${ringAlpha})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, ringRadius, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Inner transformation glow
+    const glowGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, entity.radius * 2);
+    glowGradient.addColorStop(0, `rgba(100, 150, 255, ${transformGlow * 0.4})`);
+    glowGradient.addColorStop(0.5, `rgba(74, 95, 127, ${transformGlow * 0.3})`);
+    glowGradient.addColorStop(1, 'rgba(74, 95, 127, 0)');
+    ctx.fillStyle = glowGradient;
+    ctx.beginPath();
+    ctx.arc(0, 0, entity.radius * 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
   // Draw tail
   if (entity.tail && entity.tail.length > 1) {
     // Draw yellow outline first if selected (and 2+ creatures)
@@ -2831,6 +3109,34 @@ function drawTadpole(entity, isMe, isNPC, isSelected) {
   }
   ctx.fillStyle = bodyColor;
   ctx.fill();
+
+  // Draw food particles inside body
+  const currentFood = entity.food || 0;
+  const foodCapacity = entity.type === 'cell' ? CELL_FOOD_CAPACITY : getFoodCapacity(entity);
+  if (currentFood > 0) {
+    const foodRatio = currentFood / foodCapacity;
+    const maxParticles = 8; // Max visible food particles
+    const particleCount = Math.min(Math.ceil(currentFood / 2), maxParticles);
+
+    // Use entity id to create consistent particle positions
+    const seed = entity.id ? entity.id.charCodeAt(0) : 0;
+
+    for (let i = 0; i < particleCount; i++) {
+      // Deterministic pseudo-random positions based on entity and particle index
+      const angle = ((seed + i * 137.5) % 360) * Math.PI / 180;
+      const dist = effectiveRadius * (0.25 + ((seed + i * 73) % 100) / 200);
+      const px = Math.cos(angle) * dist * 0.6 - effectiveRadius * 0.2;
+      const py = Math.sin(angle) * dist * 0.5;
+
+      // Size based on food fullness
+      const particleSize = effectiveRadius * 0.08 * (0.7 + foodRatio * 0.5);
+
+      ctx.beginPath();
+      ctx.arc(px, py, particleSize, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 255, ${0.4 + foodRatio * 0.3})`;
+      ctx.fill();
+    }
+  }
 
   // Border - yellow for selected (only if 2+ creatures), white for own unselected
   if (isSelected && myTadpoles.length > 1) {
@@ -3094,6 +3400,33 @@ function drawCell(entity, isMe, isSelected) {
     ctx.fill();
   }
 
+  // Draw food particles inside cell body
+  const currentFood = entity.food || 0;
+  if (currentFood > 0) {
+    const foodRatio = currentFood / CELL_FOOD_CAPACITY;
+    const maxParticles = 15; // Cells can show more particles
+    const particleCount = Math.min(Math.ceil(currentFood / 3), maxParticles);
+
+    // Use entity id to create consistent particle positions
+    const seed = entity.id ? entity.id.charCodeAt(0) : 0;
+
+    for (let i = 0; i < particleCount; i++) {
+      // Deterministic pseudo-random positions based on entity and particle index
+      const angle = ((seed + i * 137.5) % 360) * Math.PI / 180;
+      const dist = entity.radius * (0.2 + ((seed + i * 73) % 100) / 200);
+      const px = Math.cos(angle) * dist * 0.7;
+      const py = Math.sin(angle) * dist * 0.7;
+
+      // Size based on food fullness
+      const particleSize = entity.radius * 0.06 * (0.7 + foodRatio * 0.5);
+
+      ctx.beginPath();
+      ctx.arc(px, py, particleSize, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 255, ${0.35 + foodRatio * 0.25})`;
+      ctx.fill();
+    }
+  }
+
   // Border - yellow for selected (only if 2+ creatures), white for own unselected
   if (isSelected && myTadpoles.length > 1) {
     ctx.strokeStyle = 'rgba(255, 255, 0, 1)'; // Solid yellow
@@ -3180,8 +3513,12 @@ function drawCell(entity, isMe, isSelected) {
         const tailSegments = 8;
         const curlAmount = (1 - progress) * Math.PI * 1.5; // Starts very curled, straightens out
 
+        // Tail thickness grows quickly early (ease-out curve)
+        const thicknessProgress = 1 - Math.pow(1 - progress, 2); // Faster early growth
+        const tailThickness = Math.max(1.5, organismSize * 0.25 * (0.5 + thicknessProgress * 0.5));
+
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-        ctx.lineWidth = Math.max(1, organismSize * 0.15);
+        ctx.lineWidth = tailThickness;
         ctx.lineCap = 'round';
         ctx.beginPath();
 
@@ -3211,7 +3548,7 @@ function drawCell(entity, isMe, isSelected) {
         ctx.stroke();
 
         // Tail gets thinner towards tip - draw again with gradient effect
-        ctx.lineWidth = Math.max(0.5, organismSize * 0.08);
+        ctx.lineWidth = Math.max(0.5, tailThickness * 0.5);
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
         ctx.stroke();
       }

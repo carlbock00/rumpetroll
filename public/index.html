@@ -30,7 +30,7 @@
   <div id="statsDisplay" class="stats-display">
     <div>Health: <span id="healthStat">100</span></div>
     <div>Strength: <span id="strengthStat">50</span></div>
-    <div>Food: <span id="foodStat">0</span></div>
+    <div>Food: <span id="foodStat">0</span>/<span id="foodCapacityStat">10</span></div>
   </div>
 
   <div id="deathScreen" class="death-screen hidden">
@@ -67,6 +67,16 @@
               <div class="upgrade-cost">Cost: <span id="strengthUpgradeCost">5</span> food</div>
               <button class="upgrade-buy-btn" id="buyStrengthBtn">Upgrade Strength</button>
             </div>
+
+            <div class="upgrade-option">
+              <div class="upgrade-option-header">
+                <h3>Capacity</h3>
+                <span class="upgrade-level">Level: <span id="capacityUpgradeLevel">0</span>/3</span>
+              </div>
+              <p class="upgrade-description">Increase food capacity (+7 per level)</p>
+              <div class="upgrade-cost">Cost: <span id="capacityUpgradeCost">3</span> food</div>
+              <button class="upgrade-buy-btn" id="buyCapacityBtn">Upgrade Capacity</button>
+            </div>
           </div>
         </div>
 
@@ -82,7 +92,7 @@
                 <div>• Better health regeneration</div>
                 <div>• Can support other creatures</div>
               </div>
-              <div class="transform-cost">Cost: <span>5</span> food</div>
+              <div class="transform-cost">Cost: <span>20</span> food</div>
               <button class="transform-btn" id="transformCellBtn">Transform to Cell</button>
             </div>
           </div>
