@@ -1162,13 +1162,12 @@ const CELL_TAIL_LENGTH = 25;
 
 function initializeCellTail(entity) {
   entity.cellTail = [];
-  entity.cellTailAngle = entity.angle || 0;
 
-  // Initialize tail segments on one edge of the hexagon (bottom edge)
-  const tailAngle = entity.cellTailAngle + Math.PI; // Point opposite to movement
+  // Tail is always at the back of the body (fixed corner)
+  const tailAngle = (entity.angle || 0) + Math.PI; // Point opposite to facing direction
   const segmentLength = CELL_TAIL_LENGTH / CELL_TAIL_SEGMENTS;
 
-  // Start position - one of the hexagon vertices
+  // Start position - at the back edge of the cell
   const startX = entity.x + Math.cos(tailAngle) * entity.radius;
   const startY = entity.y + Math.sin(tailAngle) * entity.radius;
 
@@ -1192,44 +1191,77 @@ function updateCellTail(entity, time) {
   const vy = entity.vy || 0;
   const speed = Math.sqrt(vx * vx + vy * vy);
 
-  // Update cell's facing angle based on movement
+  // Update cell's body angle based on movement direction (whole body rotates)
   if (speed > 0.1) {
-    entity.cellTailAngle = Math.atan2(vy, vx);
+    const targetAngle = Math.atan2(vy, vx);
+    // Smooth rotation towards movement direction
+    let angleDiff = targetAngle - entity.angle;
+    // Normalize to -PI to PI
+    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+    entity.angle += angleDiff * 0.06; // Slower, more gradual turn rate
   }
 
-  // Tail base position - on the back edge of the cell
-  const tailAngle = entity.cellTailAngle + Math.PI;
+  // Kick-off detection for natural thrust motion
+  const prevSpeed = entity.cellTailPrevSpeed || 0;
+  const acceleration = speed - prevSpeed;
+  entity.cellTailPrevSpeed = speed;
+
+  // Initialize kick properties if not set
+  if (entity.cellTailKickIntensity === undefined) entity.cellTailKickIntensity = 0;
+  if (entity.cellTailKickPhase === undefined) entity.cellTailKickPhase = 0;
+
+  // Trigger kick-off when accelerating
+  if (acceleration > 0.015) {
+    entity.cellTailKickIntensity = Math.min(entity.cellTailKickIntensity + acceleration * 12, 2.5);
+    entity.cellTailKickPhase = time * 18;
+  }
+
+  // Decay kick intensity over time
+  entity.cellTailKickIntensity *= 0.9;
+
+  // Tail is at a FIXED corner of the cell body (opposite to front)
+  const tailAngle = entity.angle + Math.PI;
   const baseX = x + Math.cos(tailAngle) * entity.radius * 0.8;
   const baseY = y + Math.sin(tailAngle) * entity.radius * 0.8;
 
   const segmentLength = CELL_TAIL_LENGTH / CELL_TAIL_SEGMENTS;
 
-  // Wiggle parameters (smaller than tadpole)
-  const baseWiggle = 0.3;
-  const speedWiggle = Math.min(speed * 1.5, 1.2);
+  // Natural swimming wiggle parameters
+  const baseWiggle = 0.35;
+  const speedWiggle = Math.min(speed * 1.8, 1.5);
   const wiggleIntensity = baseWiggle + speedWiggle;
-  const wiggleSpeed = 8 + (speed * 6);
+  const baseWiggleSpeed = 5;
+  const wiggleSpeed = Math.min(baseWiggleSpeed + (speed * 7), 12);
 
   for (let i = 0; i < CELL_TAIL_SEGMENTS; i++) {
     const segment = entity.cellTail[i];
     const targetX = i === 0 ? baseX : entity.cellTail[i - 1].x;
     const targetY = i === 0 ? baseY : entity.cellTail[i - 1].y;
 
-    // Wiggle motion
-    const segmentWiggle = Math.sin(time * wiggleSpeed + i * 0.6 + (entity.wiggleOffset || 0)) *
-                          wiggleIntensity * (i / CELL_TAIL_SEGMENTS) * 5;
+    // Smooth flowing wave motion - increases toward tail tip
+    const wavePhase = time * wiggleSpeed + i * 0.55 + (entity.wiggleOffset || 0);
+    const segmentWiggle = Math.sin(wavePhase) * wiggleIntensity * (i / CELL_TAIL_SEGMENTS) * 6;
+
+    // Kick-off thrust - propagates down the tail with delay
+    const kickDelay = i * 0.12;
+    const kickWave = Math.sin(entity.cellTailKickPhase - kickDelay * 8) *
+                     entity.cellTailKickIntensity * (i / CELL_TAIL_SEGMENTS) * 8;
+
+    // Combined natural motion
+    const totalWiggle = segmentWiggle + kickWave;
 
     const wiggleAngle = tailAngle + Math.PI / 2;
-    const wiggleX = Math.cos(wiggleAngle) * segmentWiggle;
-    const wiggleY = Math.sin(wiggleAngle) * segmentWiggle;
+    const wiggleX = Math.cos(wiggleAngle) * totalWiggle;
+    const wiggleY = Math.sin(wiggleAngle) * totalWiggle;
 
-    // Calculate segment position
+    // Calculate segment position with drag effect
     const dx = segment.x - targetX;
     const dy = segment.y - targetY;
     const currentDist = Math.sqrt(dx * dx + dy * dy);
 
     let angle;
-    if (currentDist > 1) {
+    if (currentDist > 0.5) {
       angle = Math.atan2(dy, dx);
     } else {
       angle = tailAngle;
@@ -1238,9 +1270,10 @@ function updateCellTail(entity, time) {
     const newX = targetX + Math.cos(angle) * segmentLength + wiggleX;
     const newY = targetY + Math.sin(angle) * segmentLength + wiggleY;
 
-    // Smooth interpolation
-    segment.x += (newX - segment.x) * 0.4;
-    segment.y += (newY - segment.y) * 0.4;
+    // Smoother interpolation for fluid motion
+    const lerpFactor = 0.35 + (i / CELL_TAIL_SEGMENTS) * 0.1; // Tip follows more loosely
+    segment.x += (newX - segment.x) * lerpFactor;
+    segment.y += (newY - segment.y) * lerpFactor;
   }
 }
 
@@ -3376,7 +3409,7 @@ function render() {
     if (moveTarget && moveTarget.isFoodTarget && moveTarget.foodId === foodItem.id) {
       ctx.beginPath();
       ctx.arc(foodItem.x, foodItem.y, drawRadius + 8, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(255, 255, 100, 0.8)';
+      ctx.strokeStyle = 'rgba(255, 255, 0, 0.8)'; // Consistent yellow
       ctx.lineWidth = 2;
       ctx.stroke();
     }
@@ -3486,7 +3519,7 @@ function render() {
         const pulseTime = Date.now() / 400;
         const pulseAlpha = 0.6 + Math.sin(pulseTime) * 0.2;
 
-        ctx.strokeStyle = `rgba(255, 255, 100, ${pulseAlpha})`;
+        ctx.strokeStyle = `rgba(255, 255, 0, ${pulseAlpha})`; // Consistent yellow
         ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.arc(x, y, tad.radius + 6, 0, Math.PI * 2);
@@ -3768,7 +3801,7 @@ function drawTadpole(entity, isMe, isNPC, isSelected) {
       const ringRadius = entity.radius * (1.2 + ringPhase * 1.5);
       const ringAlpha = (1 - ringPhase) * transformGlow * 0.4;
 
-      ctx.strokeStyle = `rgba(100, 180, 255, ${ringAlpha})`;
+      ctx.strokeStyle = `rgba(100, 200, 255, ${ringAlpha})`; // Consistent blue
       ctx.lineWidth = 2 + transformProgress * 2;
       ctx.beginPath();
       ctx.arc(0, 0, ringRadius, 0, Math.PI * 2);
@@ -3786,13 +3819,13 @@ function drawTadpole(entity, isMe, isNPC, isSelected) {
 
       ctx.beginPath();
       ctx.arc(px, py, particleSize, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(150, 200, 255, ${0.3 + transformProgress * 0.4})`;
+      ctx.fillStyle = `rgba(100, 200, 255, ${0.3 + transformProgress * 0.4})`; // Consistent blue
       ctx.fill();
     }
 
     // Inner transformation glow
     const glowGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, entity.radius * 2);
-    glowGradient.addColorStop(0, `rgba(100, 150, 255, ${transformGlow * 0.5})`);
+    glowGradient.addColorStop(0, `rgba(100, 200, 255, ${transformGlow * 0.5})`); // Consistent blue
     glowGradient.addColorStop(0.5, `rgba(74, 95, 127, ${transformGlow * 0.3})`);
     glowGradient.addColorStop(1, 'rgba(74, 95, 127, 0)');
     ctx.fillStyle = glowGradient;
@@ -4076,11 +4109,11 @@ function drawCell(entity, isMe, isSelected) {
   const strengthLvl = entity.strengthLevel || 0;
   const totalLvl = healthLvl + strengthLvl;
 
-  // Size bonus: +3% per combined level (max +30% at level 10 total)
-  const upgradeSizeBonus = 1 + (totalLvl * 0.03);
+  // Size bonus: +4% per combined level (max +40% at level 10 total) - matches tadpole
+  const upgradeSizeBonus = 1 + (totalLvl * 0.04);
 
-  // Glow intensity based on level (starts at level 2)
-  const upgradeGlow = totalLvl >= 2 ? Math.min((totalLvl - 1) * 0.1, 0.5) : 0;
+  // Glow intensity based on level (starts at level 2) - matches tadpole
+  const upgradeGlow = totalLvl >= 2 ? Math.min((totalLvl - 1) * 0.12, 0.6) : 0;
 
   // Hair density bonus: more hairs at higher levels
   const hairDensityBonus = Math.floor(totalLvl * 0.5); // +0.5 hairs per edge per level
@@ -4193,8 +4226,8 @@ function drawCell(entity, isMe, isSelected) {
 
   // Draw cell tail (if has Motor Tail upgrade - speed level 2+)
   if (entity.hasCellTail && entity.cellTail && entity.cellTail.length > 1) {
-    // Calculate tail base position on the back edge
-    const tailAngle = (entity.cellTailAngle || entity.angle || 0) + Math.PI;
+    // Tail is always at the back of the body (fixed corner, body rotates)
+    const tailAngle = (entity.angle || 0) + Math.PI;
     const baseX = x + Math.cos(tailAngle) * entity.radius * 0.8;
     const baseY = y + Math.sin(tailAngle) * entity.radius * 0.8;
 
@@ -4208,28 +4241,36 @@ function drawCell(entity, isMe, isSelected) {
       ctx.quadraticCurveTo(entity.cellTail[i].x, entity.cellTail[i].y, xc, yc);
     }
 
-    // Create gradient for tail
+    // Create gradient for tail - white color fading to transparent
     const lastSeg = entity.cellTail[entity.cellTail.length - 1];
     const gradient = ctx.createLinearGradient(baseX, baseY, lastSeg.x, lastSeg.y);
-    gradient.addColorStop(0, entity.color);
-    gradient.addColorStop(1, hexToRGBA(entity.color, 0.6));
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
+    gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.6)');
+    gradient.addColorStop(1, 'rgba(255, 255, 255, 0.2)');
 
     ctx.strokeStyle = gradient;
-    ctx.lineWidth = entity.radius * 0.5; // Thinner than tadpole tail
+    ctx.lineWidth = entity.radius * 0.4; // Thinner tail for cell
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.stroke();
   }
 
-  // Draw upgrade glow aura (before main cell)
+  // Draw upgrade glow aura (before main cell) - matches tadpole glow style
   if (upgradeGlow > 0 && isMe) {
     ctx.save();
     ctx.translate(x, y);
-    const glowRadius = entity.radius * upgradeSizeBonus * 1.6;
-    const gradient = ctx.createRadialGradient(0, 0, entity.radius * 0.8, 0, 0, glowRadius);
-    gradient.addColorStop(0, `rgba(100, 200, 255, ${upgradeGlow * 0.4})`);
-    gradient.addColorStop(0.5, `rgba(150, 220, 255, ${upgradeGlow * 0.2})`);
-    gradient.addColorStop(1, 'rgba(100, 200, 255, 0)');
+    const glowRadius = entity.radius * upgradeSizeBonus * 2; // Match tadpole radius
+
+    // Mix colors based on health vs strength (same as tadpole)
+    const healthRatio = healthLvl / Math.max(totalLvl, 1);
+    const r = Math.round(100 + (1 - healthRatio) * 155);
+    const g = Math.round(180 + healthRatio * 40);
+    const b = Math.round(255 * healthRatio + 100 * (1 - healthRatio));
+
+    const gradient = ctx.createRadialGradient(0, 0, entity.radius * upgradeSizeBonus, 0, 0, glowRadius);
+    gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${upgradeGlow * 0.4})`);
+    gradient.addColorStop(0.5, `rgba(${r}, ${g}, ${b}, ${upgradeGlow * 0.15})`);
+    gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
     ctx.fillStyle = gradient;
     ctx.beginPath();
     ctx.arc(0, 0, glowRadius, 0, Math.PI * 2);
@@ -4314,12 +4355,12 @@ function drawCell(entity, isMe, isSelected) {
       const px = Math.cos(angle) * dist * 0.7;
       const py = Math.sin(angle) * dist * 0.7;
 
-      // Constant particle size (doesn't scale with food amount)
-      const particleSize = entity.radius * 0.05;
+      // Constant particle size - matches tadpole visibility
+      const particleSize = entity.radius * 0.07;
 
       ctx.beginPath();
       ctx.arc(px, py, particleSize, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)'; // Match tadpole opacity
       ctx.fill();
     }
   }
@@ -4391,11 +4432,11 @@ function drawCell(entity, isMe, isSelected) {
       ctx.ellipse(0, 0, organismSize * 1.2, organismSize, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      // Tiny eyes
+      // Tiny eyes - consistent with tadpole eye opacity
       if (organismSize > 3) {
         const eyeOffset = organismSize * 0.3;
         const eyeSize = organismSize * 0.15;
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'; // Match tadpole eye opacity
         ctx.beginPath();
         ctx.arc(eyeOffset, -eyeOffset * 0.5, eyeSize, 0, Math.PI * 2);
         ctx.fill();
