@@ -47,28 +47,62 @@ const ATTACK_RANGE = 80;
 const NPC_ATTACK_COOLDOWN = 700;
 const CELL_DAMAGE_RESISTANCE = 0.6;
 
-// Initialize NPCs
+// Get spawn center based on active players
+function getSpawnCenter() {
+  const activePlayers = Object.values(players).filter(p => !p.isInactive && !p.isIdle);
+  if (activePlayers.length === 0) {
+    return { x: 0, y: 0 };
+  }
+  // Return center of all active players
+  const sumX = activePlayers.reduce((sum, p) => sum + p.x, 0);
+  const sumY = activePlayers.reduce((sum, p) => sum + p.y, 0);
+  return { x: sumX / activePlayers.length, y: sumY / activePlayers.length };
+}
+
+// Spawn radius for NPCs and food around players
+const SPAWN_RADIUS = 1200;
+const DESPAWN_RADIUS = 1800;
+const CELL_MIN_DIST_FROM_PLAYERS = 600;
+
+// Initialize NPCs around spawn center
 function initializeNPCs() {
   npcs = {};
-  const totalNPCs = 9; // 3 cells + 6 tadpoles (50% less tadpoles)
+  const totalNPCs = 9; // 3 cells + 6 tadpoles
   const npcCellCount = 3;
+  const center = getSpawnCenter();
+  const activePlayers = Object.values(players).filter(p => !p.isInactive && !p.isIdle);
 
   for (let i = 0; i < totalNPCs; i++) {
     const isCell = i < npcCellCount;
     const id = `npc_${npcIdCounter++}`;
 
-    // Cells spawn far from center (where players spawn) - at least 800 units away
     let spawnX, spawnY;
-    if (isCell) {
-      const minDistFromCenter = 800;
-      do {
-        spawnX = (Math.random() - 0.5) * 4000;
-        spawnY = (Math.random() - 0.5) * 4000;
-      } while (Math.sqrt(spawnX * spawnX + spawnY * spawnY) < minDistFromCenter);
-    } else {
-      spawnX = (Math.random() - 0.5) * 4000;
-      spawnY = (Math.random() - 0.5) * 4000;
-    }
+    let attempts = 0;
+    const maxAttempts = 50;
+
+    do {
+      // Spawn at random position within spawn radius of center
+      const angle = Math.random() * Math.PI * 2;
+      const dist = Math.random() * SPAWN_RADIUS;
+      spawnX = center.x + Math.cos(angle) * dist;
+      spawnY = center.y + Math.sin(angle) * dist;
+      attempts++;
+
+      // For cells, ensure minimum distance from all players
+      if (isCell && activePlayers.length > 0) {
+        let tooClose = false;
+        for (let player of activePlayers) {
+          const dx = spawnX - player.x;
+          const dy = spawnY - player.y;
+          if (Math.sqrt(dx * dx + dy * dy) < CELL_MIN_DIST_FROM_PLAYERS) {
+            tooClose = true;
+            break;
+          }
+        }
+        if (tooClose && attempts < maxAttempts) continue;
+      }
+      break;
+    } while (attempts < maxAttempts);
 
     npcs[id] = {
       id,
@@ -209,6 +243,11 @@ function updateNPC(npc) {
       npc.vx += Math.cos(avoidAngle) * 0.015;
       npc.vy += Math.sin(avoidAngle) * 0.015;
     }
+  }
+
+  // Reset sprinting when not chasing
+  if (!isChasing && npc.type === 'cell') {
+    npc.isSprinting = false;
   }
 
   // Wander if not chasing
@@ -417,103 +456,205 @@ setInterval(() => {
   io.emit('npcUpdate', npcs);
 }, NPC_UPDATE_INTERVAL);
 
-// Periodically relocate NPCs that have wandered too far from all players
+// Spawn a single NPC near active players
+function spawnNPCNearPlayers(isCell) {
+  const center = getSpawnCenter();
+  const activePlayers = Object.values(players).filter(p => !p.isInactive && !p.isIdle);
+  const id = `npc_${npcIdCounter++}`;
+
+  let spawnX, spawnY;
+  let attempts = 0;
+  const maxAttempts = 50;
+
+  do {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = SPAWN_RADIUS * 0.5 + Math.random() * SPAWN_RADIUS * 0.5;
+    spawnX = center.x + Math.cos(angle) * dist;
+    spawnY = center.y + Math.sin(angle) * dist;
+    attempts++;
+
+    // For cells, ensure minimum distance from all players
+    if (isCell && activePlayers.length > 0) {
+      let tooClose = false;
+      for (let player of activePlayers) {
+        const dx = spawnX - player.x;
+        const dy = spawnY - player.y;
+        if (Math.sqrt(dx * dx + dy * dy) < CELL_MIN_DIST_FROM_PLAYERS) {
+          tooClose = true;
+          break;
+        }
+      }
+      if (tooClose && attempts < maxAttempts) continue;
+    }
+    break;
+  } while (attempts < maxAttempts);
+
+  const npc = {
+    id,
+    x: spawnX,
+    y: spawnY,
+    vx: 0,
+    vy: 0,
+    color: '#505050',
+    radius: isCell ? NPC_CELL_RADIUS : NPC_TADPOLE_RADIUS,
+    health: isCell ? NPC_CELL_HEALTH : NPC_TADPOLE_HEALTH,
+    maxHealth: isCell ? NPC_CELL_HEALTH : NPC_TADPOLE_HEALTH,
+    lastHit: 0,
+    lastAttack: 0,
+    type: isCell ? 'cell' : 'tadpole',
+    moveTarget: null,
+    targetChangeTime: 0,
+    provoked: false,
+    provokedBy: null,
+    attackTarget: null,
+    chaseEnergy: 100,
+    maxChaseEnergy: 100,
+    isTired: false,
+    tiredStartTime: 0,
+    attackLungeTime: 0,
+    attackLungeAngle: 0
+  };
+
+  npcs[id] = npc;
+  return npc;
+}
+
+// Maintain NPC density around players - despawn far NPCs, spawn new ones nearby
 setInterval(() => {
   const activePlayers = Object.values(players).filter(p => !p.isInactive && !p.isIdle);
   if (activePlayers.length === 0) return;
 
-  const MAX_DIST_FROM_NEAREST_PLAYER = 1500;
+  const center = getSpawnCenter();
+  const targetTadpoles = 6;
+  const targetCells = 3;
 
+  let currentTadpoles = 0;
+  let currentCells = 0;
+
+  // Count NPCs and remove those too far from all players
   for (let npcId in npcs) {
     const npc = npcs[npcId];
 
     // Find distance to nearest player
     let nearestDist = Infinity;
-    let nearestPlayer = null;
     for (let player of activePlayers) {
       const dx = npc.x - player.x;
       const dy = npc.y - player.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist < nearestDist) {
         nearestDist = dist;
-        nearestPlayer = player;
       }
     }
 
-    // If too far from all players, relocate near a random player
-    if (nearestDist > MAX_DIST_FROM_NEAREST_PLAYER) {
-      const targetPlayer = activePlayers[Math.floor(Math.random() * activePlayers.length)];
-      const angle = Math.random() * Math.PI * 2;
-      const minDist = npc.type === 'cell' ? 600 : 300;
-      const maxDist = npc.type === 'cell' ? 1200 : 800;
-      const dist = minDist + Math.random() * (maxDist - minDist);
-
-      npc.x = targetPlayer.x + Math.cos(angle) * dist;
-      npc.y = targetPlayer.y + Math.sin(angle) * dist;
-      npc.vx = 0;
-      npc.vy = 0;
-      npc.moveTarget = null;
+    // If too far from all players, remove this NPC
+    if (nearestDist > DESPAWN_RADIUS) {
+      delete npcs[npcId];
+      continue;
     }
+
+    // Count by type
+    if (npc.type === 'cell') currentCells++;
+    else currentTadpoles++;
+  }
+
+  // Spawn new NPCs to maintain density
+  while (currentTadpoles < targetTadpoles) {
+    spawnNPCNearPlayers(false);
+    currentTadpoles++;
+  }
+  while (currentCells < targetCells) {
+    spawnNPCNearPlayers(true);
+    currentCells++;
   }
 }, 5000); // Check every 5 seconds
 
-// Food expiration and respawn - maintain constant food density
-const TARGET_FOOD_COUNT = 38; // Increased by 50%
+// Food expiration and respawn - maintain constant food density around players
+const TARGET_FOOD_COUNT = 19;
+const FOOD_SPAWN_RADIUS = 1000;
+const FOOD_DESPAWN_RADIUS = 1500;
+// Spawn/decay rate reduced by 80% (5x slower) while maintaining same equilibrium density
+const FOOD_SPAWN_INTERVAL = 10000; // 10 seconds (was 2 seconds)
+const FOOD_BASE_TTL = 150000; // 2.5 minutes base TTL (was 30 seconds)
+const FOOD_TTL_VARIANCE = 300000; // +0-5 minutes variance (was 60 seconds)
+
 setInterval(() => {
   const now = Date.now();
-  let expiredCount = 0;
+  const activePlayers = Object.values(players).filter(p => !p.isInactive && !p.isIdle);
+  const center = getSpawnCenter();
 
-  // Remove expired food
+  // Remove expired food or food too far from players
   for (let foodId in food) {
     const foodItem = food[foodId];
+
+    // Check expiration
     if (foodItem.spawnTime && foodItem.ttl) {
       if (now - foodItem.spawnTime > foodItem.ttl) {
-        io.emit('foodEaten', { foodId }); // Reuse eaten event to remove on clients
+        io.emit('foodEaten', { foodId });
         delete food[foodId];
-        expiredCount++;
+        continue;
+      }
+    }
+
+    // Check distance from nearest player (only if there are players)
+    if (activePlayers.length > 0) {
+      let nearestDist = Infinity;
+      for (let player of activePlayers) {
+        const dx = foodItem.x - player.x;
+        const dy = foodItem.y - player.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < nearestDist) nearestDist = dist;
+      }
+
+      if (nearestDist > FOOD_DESPAWN_RADIUS) {
+        io.emit('foodEaten', { foodId });
+        delete food[foodId];
       }
     }
   }
 
-  // Respawn food at random locations to maintain natural density
+  // Respawn food around players to maintain density (one at a time)
   const currentCount = Object.keys(food).length;
 
   if (currentCount < TARGET_FOOD_COUNT) {
-    const toSpawn = Math.min(3, TARGET_FOOD_COUNT - currentCount); // Spawn up to 3 at a time
+    const id = `food_${foodIdCounter++}`;
+    const baseRadius = 4;
+    const sizeVariation = 0.75 + Math.random() * 0.5;
 
-    for (let i = 0; i < toSpawn; i++) {
-      const id = `food_${foodIdCounter++}`;
-      const baseRadius = 4;
-      const sizeVariation = 0.75 + Math.random() * 0.5;
+    // Spawn around player center
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Math.random() * FOOD_SPAWN_RADIUS;
 
-      food[id] = {
-        id,
-        x: (Math.random() - 0.5) * 4000, // Random location in world
-        y: (Math.random() - 0.5) * 4000,
-        radius: baseRadius * sizeVariation,
-        spawnTime: now,
-        ttl: 30000 + Math.random() * 60000
-      };
-      io.emit('foodSpawned', food[id]);
-    }
+    food[id] = {
+      id,
+      x: center.x + Math.cos(angle) * dist,
+      y: center.y + Math.sin(angle) * dist,
+      radius: baseRadius * sizeVariation,
+      spawnTime: now,
+      ttl: FOOD_BASE_TTL + Math.random() * FOOD_TTL_VARIANCE
+    };
+    io.emit('foodSpawned', food[id]);
   }
-}, 3000); // Check every 3 seconds
+}, FOOD_SPAWN_INTERVAL);
 
 // Initialize NPCs on startup
 initializeNPCs();
 
-// Generate food in random locations
+// Generate food around spawn center
 function generateFood(count) {
+  const center = getSpawnCenter();
+
   for (let i = 0; i < count; i++) {
     const id = `food_${foodIdCounter++}`;
 
-    // Spread across 4000x4000 area
-    const x = (Math.random() - 0.5) * 4000;
-    const y = (Math.random() - 0.5) * 4000;
+    // Spawn around player center
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Math.random() * FOOD_SPAWN_RADIUS;
+    const x = center.x + Math.cos(angle) * dist;
+    const y = center.y + Math.sin(angle) * dist;
 
     // Varying size: 75-125% of base radius (4)
     const baseRadius = 4;
-    const sizeVariation = 0.75 + Math.random() * 0.5; // 0.75 to 1.25
+    const sizeVariation = 0.75 + Math.random() * 0.5;
     const radius = baseRadius * sizeVariation;
 
     food[id] = {
@@ -522,7 +663,7 @@ function generateFood(count) {
       y,
       radius,
       spawnTime: Date.now(),
-      ttl: 30000 + Math.random() * 60000 // 30-90 seconds lifespan
+      ttl: 30000 + Math.random() * 60000
     };
   }
 }
@@ -751,6 +892,30 @@ io.on('connection', (socket) => {
       players[socket.id].type = data.type;
       players[socket.id].radius = data.radius || players[socket.id].radius;
     }
+  });
+
+  // Handle player-vs-player attacks
+  socket.on('attackPlayer', (data) => {
+    const targetSocket = io.sockets.sockets.get(data.targetId);
+    if (targetSocket && players[data.targetId]) {
+      // Forward the damage to the target player
+      targetSocket.emit('playerAttacked', {
+        attackerId: socket.id,
+        damage: data.damage,
+        knockbackX: data.knockbackX,
+        knockbackY: data.knockbackY
+      });
+    }
+  });
+
+  // Handle player death notification (so other players see it)
+  socket.on('playerDied', (data) => {
+    // Broadcast to all other players that this player died
+    socket.broadcast.emit('otherPlayerDied', {
+      playerId: socket.id,
+      x: data.x,
+      y: data.y
+    });
   });
 
   // Handle player becoming inactive (tab hidden)

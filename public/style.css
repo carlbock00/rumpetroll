@@ -343,148 +343,573 @@ body {
   padding-bottom: 12px;
 }
 
-/* Upgrade Tree Section */
-.upgrade-tree {
+/* Tab Navigation */
+.upgrade-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 0;
+  margin-bottom: 0;
+  position: relative;
+  z-index: 2;
+}
+
+.upgrade-tab {
+  padding: 14px 40px;
+  background: rgba(30, 35, 50, 0.7);
+  border: 2px solid rgba(80, 90, 110, 0.4);
+  border-bottom: none;
+  border-radius: 12px 12px 0 0;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 15px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-bottom: -2px;
+  position: relative;
+}
+
+.upgrade-tab:hover {
+  background: rgba(50, 60, 80, 0.8);
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.upgrade-tab.active {
+  background: linear-gradient(180deg, rgba(20, 40, 35, 0.95) 0%, rgba(15, 30, 25, 0.95) 100%);
+  border-color: rgba(100, 200, 150, 0.5);
+  color: white;
+  z-index: 3;
+}
+
+/* Cover the border between active tab and content */
+.upgrade-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 2px;
+  right: 2px;
+  height: 4px;
+  background: rgba(15, 30, 25, 0.95);
+}
+
+/* Evolution tab active state */
+#tabEvolution.active {
+  background: linear-gradient(180deg, rgba(35, 25, 50, 0.95) 0%, rgba(25, 18, 38, 0.95) 100%);
+  border-color: rgba(180, 140, 255, 0.5);
+}
+
+#tabEvolution.active::after {
+  background: rgba(25, 18, 38, 0.95);
+}
+
+/* Page containers */
+.upgrade-page {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  overflow-y: auto;
+  background: linear-gradient(180deg, rgba(15, 30, 25, 0.95) 0%, rgba(10, 20, 18, 0.9) 100%);
+  border: 2px solid rgba(100, 200, 150, 0.5);
+  border-radius: 0 0 12px 12px;
+  padding: 25px;
+  position: relative;
+  z-index: 1;
 }
 
-.upgrade-option {
-  background: rgba(255, 255, 255, 0.05);
-  border: 2px solid rgba(255, 255, 255, 0.2);
-  border-radius: 12px;
-  padding: 20px;
-  transition: all 0.3s ease;
+#pageEvolution {
+  background: linear-gradient(180deg, rgba(25, 18, 38, 0.95) 0%, rgba(18, 12, 28, 0.9) 100%);
+  border-color: rgba(180, 140, 255, 0.5);
 }
 
-.upgrade-option:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.4);
+.upgrade-page.hidden {
+  display: none;
 }
 
-.upgrade-option-header {
+/* Panel Titles */
+.panel-title {
+  color: white;
+  font-size: 24px;
+  text-align: center;
+  margin-bottom: 20px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  background: linear-gradient(180deg, #fff 0%, #88aacc 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  padding-bottom: 15px;
+}
+
+.tech-panel {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
   align-items: center;
-  margin-bottom: 12px;
 }
 
-.upgrade-option h3 {
-  color: white;
-  font-size: 22px;
-  margin: 0;
-}
-
-.upgrade-level {
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 14px;
-}
-
-.upgrade-description {
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 14px;
-  margin-bottom: 12px;
-}
-
-.upgrade-cost {
-  color: #ffd700;
-  font-size: 16px;
-  font-weight: bold;
-  margin-bottom: 12px;
-}
-
-.upgrade-buy-btn {
-  width: 100%;
-  padding: 12px 24px;
-  background: linear-gradient(135deg, #1a4d2e 0%, #0f2818 100%);
-  border: 2px solid rgba(100, 255, 100, 0.5);
-  border-radius: 8px;
-  color: white;
-  font-size: 16px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.upgrade-buy-btn:hover {
-  background: linear-gradient(135deg, #2a5d3e 0%, #1f3828 100%);
-  border-color: rgba(100, 255, 100, 0.8);
-  transform: scale(1.02);
-}
-
-.upgrade-buy-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Transform Section */
-.transform-options {
+.evolution-panel {
   display: flex;
   flex-direction: column;
-  gap: 20px;
 }
 
-.transform-option {
-  background: rgba(255, 255, 255, 0.05);
-  border: 2px solid rgba(255, 255, 255, 0.2);
-  border-radius: 12px;
+.evolution-panel.full-page {
+  align-items: center;
   padding: 20px;
-  transition: all 0.3s ease;
 }
 
-.transform-option:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.4);
+.evolution-options.centered {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  max-width: 400px;
 }
 
-.transform-option h3 {
-  color: white;
-  font-size: 22px;
-  margin: 0 0 12px 0;
+/* Tech Tree Branch Structure */
+.tech-tree-branch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px;
+  position: relative;
 }
 
-.transform-description {
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 14px;
-  margin-bottom: 16px;
-}
-
-.transform-stats {
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 14px;
-  margin-bottom: 16px;
-}
-
-.transform-stats div {
-  margin: 4px 0;
-}
-
-.transform-cost {
-  color: #ffd700;
-  font-size: 16px;
-  font-weight: bold;
-  margin-bottom: 12px;
-}
-
-.transform-btn {
+.tree-root {
   width: 100%;
-  padding: 12px 24px;
-  background: linear-gradient(135deg, #1a3d5d 0%, #0f1f38 100%);
-  border: 2px solid rgba(100, 150, 255, 0.5);
-  border-radius: 8px;
-  color: white;
-  font-size: 16px;
+  height: 20px;
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.root-connector {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 240px;
+  height: 2px;
+  background: rgba(100, 200, 150, 0.5);
+  transform: translateX(-50%);
+}
+
+.root-connector::before,
+.root-connector::after {
+  content: '';
+  position: absolute;
+  width: 2px;
+  height: 18px;
+  background: rgba(100, 200, 150, 0.5);
+  top: 2px;
+}
+
+.root-connector::before {
+  left: 0;
+}
+
+.root-connector::after {
+  right: 0;
+}
+
+/* Main branches container */
+.tree-branches {
+  display: flex;
+  justify-content: center;
+  gap: 120px;
+  width: 100%;
+}
+
+/* Individual branch */
+.branch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+
+.branch-line {
+  display: none;
+}
+
+.branch-connector {
+  width: 2px;
+  height: 12px;
+  background: rgba(100, 200, 150, 0.5);
+  flex-shrink: 0;
+  margin: 3px 0;
+}
+
+/* Sub-branches (for capacity branching from health) */
+.sub-branches {
+  display: flex;
+  gap: 15px;
+  position: relative;
+  padding-top: 25px;
+  margin-top: 5px;
+}
+
+/* Horizontal line connecting sub-branches */
+.sub-branch-lines {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 40px);
+  height: 2px;
+  background: rgba(100, 200, 150, 0.5);
+}
+
+/* Vertical drops from horizontal to each sub-branch */
+.sub-branch-lines::before,
+.sub-branch-lines::after {
+  content: '';
+  position: absolute;
+  width: 2px;
+  height: 15px;
+  background: rgba(100, 200, 150, 0.5);
+  top: 2px;
+}
+
+.sub-branch-lines::before {
+  left: 0;
+}
+
+.sub-branch-lines::after {
+  right: 0;
+}
+
+/* Connector from parent node down to the horizontal split */
+.sub-branches::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 10px;
+  background: rgba(100, 200, 150, 0.5);
+}
+
+.sub-branch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Individual Tech Node */
+.tech-node {
+  position: relative;
+  width: 110px;
   cursor: pointer;
   transition: all 0.3s ease;
 }
 
-.transform-btn:hover {
-  background: linear-gradient(135deg, #2a4d6d 0%, #1f2f48 100%);
-  border-color: rgba(100, 150, 255, 0.8);
-  transform: scale(1.02);
+.tech-node-inner {
+  background: linear-gradient(135deg, rgba(40, 80, 60, 0.9) 0%, rgba(20, 50, 35, 0.9) 100%);
+  border: 2px solid rgba(100, 200, 150, 0.6);
+  border-radius: 10px;
+  padding: 10px 8px;
+  text-align: center;
+  transition: all 0.3s ease;
 }
 
-.transform-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.tech-node:hover .tech-node-inner {
+  background: linear-gradient(135deg, rgba(50, 100, 75, 0.95) 0%, rgba(30, 70, 50, 0.95) 100%);
+  border-color: rgba(100, 255, 150, 0.9);
+  transform: scale(1.05);
+  box-shadow: 0 0 15px rgba(100, 200, 150, 0.4);
+}
+
+/* Locked state (prerequisite not met) */
+.tech-node.locked .tech-node-inner {
+  background: linear-gradient(135deg, rgba(35, 35, 45, 0.8) 0%, rgba(20, 20, 28, 0.8) 100%);
+  border-color: rgba(80, 80, 100, 0.3);
+}
+
+.tech-node.locked:hover .tech-node-inner {
+  background: linear-gradient(135deg, rgba(40, 40, 50, 0.85) 0%, rgba(25, 25, 33, 0.85) 100%);
+  border-color: rgba(90, 90, 110, 0.4);
+  transform: none;
+  box-shadow: none;
+}
+
+.tech-node.locked .tech-icon,
+.tech-node.locked .tech-name,
+.tech-node.locked .tech-effect {
+  opacity: 0.35;
+}
+
+/* Unaffordable state (unlocked but can't afford - lighter gray) */
+.tech-node.unaffordable .tech-node-inner {
+  background: linear-gradient(135deg, rgba(55, 60, 70, 0.85) 0%, rgba(40, 45, 55, 0.85) 100%);
+  border-color: rgba(130, 140, 160, 0.5);
+}
+
+.tech-node.unaffordable:hover .tech-node-inner {
+  background: linear-gradient(135deg, rgba(65, 70, 80, 0.9) 0%, rgba(50, 55, 65, 0.9) 100%);
+  border-color: rgba(150, 160, 180, 0.6);
+  transform: scale(1.02);
+  box-shadow: none;
+}
+
+.tech-node.unaffordable .tech-icon,
+.tech-node.unaffordable .tech-name,
+.tech-node.unaffordable .tech-effect {
+  opacity: 0.7;
+}
+
+.tech-node.unaffordable .tech-cost {
+  color: rgba(255, 100, 100, 0.9);
+}
+
+/* Researched/completed state */
+.tech-node.researched .tech-node-inner {
+  background: linear-gradient(135deg, rgba(60, 120, 90, 0.95) 0%, rgba(40, 90, 65, 0.95) 100%);
+  border-color: rgba(150, 255, 200, 0.8);
+  box-shadow: 0 0 12px rgba(100, 200, 150, 0.3);
+}
+
+.tech-node.researched .tech-icon {
+  color: #aaffcc;
+}
+
+/* Tech Node Elements */
+.tech-icon {
+  font-size: 22px;
+  margin-bottom: 4px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.tech-name {
+  color: white;
+  font-size: 11px;
+  font-weight: bold;
+  margin-bottom: 3px;
+}
+
+.tech-effect {
+  color: rgba(150, 255, 200, 0.9);
+  font-size: 10px;
+  margin-bottom: 4px;
+}
+
+.tech-cost {
+  color: #ffd700;
+  font-size: 10px;
+  font-weight: bold;
+}
+
+/* Evolution Panel Styles */
+.evolution-options {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.evolution-option {
+  display: flex;
+  gap: 15px;
+  background: linear-gradient(135deg, rgba(80, 60, 120, 0.9) 0%, rgba(50, 35, 80, 0.9) 100%);
+  border: 2px solid rgba(180, 140, 255, 0.6);
+  border-radius: 12px;
+  padding: 15px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.evolution-option:hover {
+  background: linear-gradient(135deg, rgba(100, 80, 150, 0.95) 0%, rgba(70, 50, 110, 0.95) 100%);
+  border-color: rgba(200, 160, 255, 0.9);
+  box-shadow: 0 0 20px rgba(180, 140, 255, 0.4);
+}
+
+.evolution-option.locked {
+  background: linear-gradient(135deg, rgba(40, 40, 50, 0.8) 0%, rgba(25, 25, 35, 0.8) 100%);
+  border-color: rgba(100, 100, 120, 0.4);
+}
+
+.evolution-option.locked:hover {
+  background: linear-gradient(135deg, rgba(50, 50, 60, 0.85) 0%, rgba(35, 35, 45, 0.85) 100%);
+  border-color: rgba(120, 120, 140, 0.5);
+  box-shadow: none;
+}
+
+.evolution-option.locked .evolution-icon,
+.evolution-option.locked .evolution-name,
+.evolution-option.locked .evolution-desc {
+  opacity: 0.35;
+}
+
+/* Unaffordable evolution option (unlocked but can't afford) */
+.evolution-option.unaffordable {
+  background: linear-gradient(135deg, rgba(55, 50, 70, 0.85) 0%, rgba(40, 35, 55, 0.85) 100%);
+  border-color: rgba(140, 130, 170, 0.5);
+}
+
+.evolution-option.unaffordable:hover {
+  background: linear-gradient(135deg, rgba(65, 60, 80, 0.9) 0%, rgba(50, 45, 65, 0.9) 100%);
+  border-color: rgba(160, 150, 190, 0.6);
+  box-shadow: none;
+}
+
+.evolution-option.unaffordable .evolution-icon,
+.evolution-option.unaffordable .evolution-name,
+.evolution-option.unaffordable .evolution-desc {
+  opacity: 0.7;
+}
+
+.evolution-option.unaffordable .evolution-cost {
+  color: rgba(255, 100, 100, 0.9);
+}
+
+.evolution-option.researched {
+  background: linear-gradient(135deg, rgba(100, 80, 150, 0.95) 0%, rgba(70, 50, 110, 0.95) 100%);
+  border-color: rgba(200, 180, 255, 0.8);
+}
+
+.evolution-icon {
+  font-size: 36px;
+  color: rgba(200, 180, 255, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 50px;
+}
+
+.evolution-content {
+  flex: 1;
+}
+
+.evolution-name {
+  color: white;
+  font-size: 16px;
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.evolution-desc {
+  color: rgba(200, 180, 255, 0.9);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.evolution-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+.evolution-stats span {
+  color: rgba(180, 180, 200, 0.8);
+  font-size: 11px;
+}
+
+.evolution-requires {
+  color: rgba(255, 200, 100, 0.8);
+  font-size: 10px;
+  margin-bottom: 6px;
+}
+
+.evolution-cost {
+  color: #ffd700;
+  font-size: 13px;
+  font-weight: bold;
+}
+
+/* Hidden utility class */
+.hidden {
+  display: none !important;
+}
+
+/* Cell Tech Tree - 3 branch layout */
+.cell-connector {
+  width: 360px; /* Wider to span 3 branches */
+}
+
+.cell-branches {
+  gap: 80px; /* Tighter gap for 3 branches */
+}
+
+/* Cell tech node styling - blue theme */
+.tech-node.cell-tech .tech-node-inner {
+  background: linear-gradient(135deg, rgba(40, 60, 90, 0.9) 0%, rgba(25, 40, 65, 0.9) 100%);
+  border-color: rgba(100, 150, 220, 0.6);
+}
+
+.tech-node.cell-tech:hover .tech-node-inner {
+  background: linear-gradient(135deg, rgba(50, 75, 110, 0.95) 0%, rgba(35, 55, 85, 0.95) 100%);
+  border-color: rgba(120, 180, 255, 0.9);
+  box-shadow: 0 0 15px rgba(100, 150, 220, 0.4);
+}
+
+.tech-node.cell-tech .tech-effect {
+  color: rgba(150, 200, 255, 0.9);
+}
+
+.tech-node.cell-tech.researched .tech-node-inner {
+  background: linear-gradient(135deg, rgba(60, 100, 140, 0.95) 0%, rgba(40, 75, 110, 0.95) 100%);
+  border-color: rgba(150, 200, 255, 0.8);
+  box-shadow: 0 0 12px rgba(100, 150, 220, 0.3);
+}
+
+.tech-node.cell-tech.researched .tech-icon {
+  color: #aaddff;
+}
+
+/* Cell tech tree connector colors - blue theme */
+#cellTechTree .root-connector,
+#cellTechTree .branch-connector,
+#cellTechTree .sub-branch-lines,
+#cellTechTree .sub-branches::before {
+  background: rgba(100, 150, 220, 0.5);
+}
+
+#cellTechTree .root-connector::before,
+#cellTechTree .root-connector::after,
+#cellTechTree .sub-branch-lines::before,
+#cellTechTree .sub-branch-lines::after {
+  background: rgba(100, 150, 220, 0.5);
+}
+
+/* Speed branch - cyan accent */
+.speed-branch .tech-node .tech-node-inner {
+  background: linear-gradient(135deg, rgba(40, 80, 90, 0.9) 0%, rgba(25, 55, 65, 0.9) 100%);
+  border-color: rgba(100, 200, 200, 0.6);
+}
+
+.speed-branch .tech-node:hover .tech-node-inner {
+  background: linear-gradient(135deg, rgba(50, 100, 110, 0.95) 0%, rgba(35, 75, 85, 0.95) 100%);
+  border-color: rgba(120, 220, 220, 0.9);
+  box-shadow: 0 0 15px rgba(100, 200, 200, 0.4);
+}
+
+.speed-branch .tech-node .tech-effect {
+  color: rgba(150, 230, 230, 0.9);
+}
+
+.speed-branch .tech-node.researched .tech-node-inner {
+  background: linear-gradient(135deg, rgba(60, 120, 130, 0.95) 0%, rgba(40, 90, 100, 0.95) 100%);
+  border-color: rgba(150, 230, 230, 0.8);
+}
+
+/* Offense branch - orange/red accent */
+.offense-branch .tech-node .tech-node-inner {
+  background: linear-gradient(135deg, rgba(90, 60, 40, 0.9) 0%, rgba(65, 40, 25, 0.9) 100%);
+  border-color: rgba(220, 150, 100, 0.6);
+}
+
+.offense-branch .tech-node:hover .tech-node-inner {
+  background: linear-gradient(135deg, rgba(110, 75, 50, 0.95) 0%, rgba(85, 55, 35, 0.95) 100%);
+  border-color: rgba(255, 180, 120, 0.9);
+  box-shadow: 0 0 15px rgba(220, 150, 100, 0.4);
+}
+
+.offense-branch .tech-node .tech-effect {
+  color: rgba(255, 200, 150, 0.9);
+}
+
+.offense-branch .tech-node.researched .tech-node-inner {
+  background: linear-gradient(135deg, rgba(130, 90, 60, 0.95) 0%, rgba(100, 70, 45, 0.95) 100%);
+  border-color: rgba(255, 200, 150, 0.8);
 }

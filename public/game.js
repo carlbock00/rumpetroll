@@ -16,6 +16,7 @@ const foodCapacityStat = document.getElementById('foodCapacityStat');
 const creatureList = document.getElementById('creatureList');
 const upgradeMenu = document.getElementById('upgradeMenu');
 const upgradeCloseBtn = document.getElementById('upgradeCloseBtn');
+// Legacy elements (hidden but kept for data storage)
 const buyHealthBtn = document.getElementById('buyHealthBtn');
 const buyStrengthBtn = document.getElementById('buyStrengthBtn');
 const transformCellBtn = document.getElementById('transformCellBtn');
@@ -26,6 +27,50 @@ const healthUpgradeCostEl = document.getElementById('healthUpgradeCost');
 const strengthUpgradeCostEl = document.getElementById('strengthUpgradeCost');
 const capacityUpgradeCostEl = document.getElementById('capacityUpgradeCost');
 const buyCapacityBtn = document.getElementById('buyCapacityBtn');
+
+// Tech Tree nodes - Health and Strength are root branches, Capacity branches from Health
+const techNodes = {
+  // Health branch (root)
+  techMembrane: { type: 'health', level: 1, cost: 5, requires: null },
+  techCytoplasm: { type: 'health', level: 2, cost: 8, requires: 'techMembrane' },
+  techNucleus: { type: 'health', level: 3, cost: 12, requires: 'techCytoplasm' },
+  // Capacity branch (branches from Health/Membrane)
+  techVacuole: { type: 'capacity', level: 1, cost: 3, requires: 'techMembrane' },
+  techLysosome: { type: 'capacity', level: 2, cost: 5, requires: 'techVacuole' },
+  techVesicle: { type: 'capacity', level: 3, cost: 8, requires: 'techLysosome' },
+  // Strength branch (root)
+  techFlagellum: { type: 'strength', level: 1, cost: 5, requires: null },
+  techPseudopod: { type: 'strength', level: 2, cost: 8, requires: 'techFlagellum' },
+  techCytoskeleton: { type: 'strength', level: 3, cost: 12, requires: 'techPseudopod' },
+  // Evolution (requires Nucleus)
+  techMitosis: { type: 'transform', level: 1, cost: 20, requires: 'techNucleus' }
+};
+
+// Cell-specific technology tree
+const cellTechNodes = {
+  // Defense branch (root) - Health for cells
+  cellTechWall: { type: 'cellHealth', level: 1, cost: 8, requires: null },
+  cellTechER: { type: 'cellHealth', level: 2, cost: 12, requires: 'cellTechWall' },
+  cellTechGolgi: { type: 'cellHealth', level: 3, cost: 18, requires: 'cellTechER' },
+  // Storage branch (branches from Defense)
+  cellTechStorage: { type: 'cellCapacity', level: 1, cost: 6, requires: 'cellTechWall' },
+  cellTechLipid: { type: 'cellCapacity', level: 2, cost: 10, requires: 'cellTechStorage' },
+  cellTechGlycogen: { type: 'cellCapacity', level: 3, cost: 15, requires: 'cellTechLipid' },
+  // Speed branch (root) - NEW! Level 2 gives tail
+  cellTechCilia: { type: 'cellSpeed', level: 1, cost: 6, requires: null },
+  cellTechMotor: { type: 'cellSpeed', level: 2, cost: 12, requires: 'cellTechCilia' }, // Gives tail!
+  cellTechJet: { type: 'cellSpeed', level: 3, cost: 18, requires: 'cellTechMotor' },
+  // Offense branch (root) - Strength for cells
+  cellTechEnzymes: { type: 'cellStrength', level: 1, cost: 8, requires: null },
+  cellTechToxin: { type: 'cellStrength', level: 2, cost: 12, requires: 'cellTechEnzymes' },
+  cellTechPredator: { type: 'cellStrength', level: 3, cost: 18, requires: 'cellTechToxin' }
+};
+
+// Cell upgrade bonuses
+const CELL_HEALTH_BONUSES = [30, 60, 90]; // Cumulative health bonus per level
+const CELL_STRENGTH_BONUSES = [15, 30, 50]; // Cumulative damage bonus per level
+const CELL_CAPACITY_BONUSES = [15, 30, 50]; // Cumulative capacity bonus per level
+const CELL_SPEED_BONUSES = [0.15, 0.25, 0.40]; // Speed multiplier bonus per level
 
 // Delegated click handler for creature list
 creatureList.addEventListener('click', (e) => {
@@ -550,6 +595,7 @@ socket.on('npcUpdate', (serverNpcs) => {
       npc.provoked = serverNpc.provoked;
       npc.isTired = serverNpc.isTired;
       npc.chaseEnergy = serverNpc.chaseEnergy;
+      npc.isSprinting = serverNpc.isSprinting;
       // Convert server lunge time to client time - if it's a new attack, use current time
       if (serverNpc.attackLungeTime && serverNpc.attackLungeTime !== npc.lastServerLungeTime) {
         npc.attackLungeTime = Date.now(); // Use client time for animation
@@ -819,6 +865,94 @@ function initializeTadpole(entity) {
       x: entity.x - (i + 1) * segmentLength,
       y: entity.y
     });
+  }
+}
+
+// Cell tail constants - smaller/shorter than tadpole tails
+const CELL_TAIL_SEGMENTS = 6;
+const CELL_TAIL_LENGTH = 25;
+
+function initializeCellTail(entity) {
+  entity.cellTail = [];
+  entity.cellTailAngle = entity.angle || 0;
+
+  // Initialize tail segments on one edge of the hexagon (bottom edge)
+  const tailAngle = entity.cellTailAngle + Math.PI; // Point opposite to movement
+  const segmentLength = CELL_TAIL_LENGTH / CELL_TAIL_SEGMENTS;
+
+  // Start position - one of the hexagon vertices
+  const startX = entity.x + Math.cos(tailAngle) * entity.radius;
+  const startY = entity.y + Math.sin(tailAngle) * entity.radius;
+
+  for (let i = 0; i < CELL_TAIL_SEGMENTS; i++) {
+    entity.cellTail.push({
+      x: startX + Math.cos(tailAngle) * (i + 1) * segmentLength,
+      y: startY + Math.sin(tailAngle) * (i + 1) * segmentLength
+    });
+  }
+}
+
+function updateCellTail(entity, time) {
+  if (!entity.hasCellTail) return;
+  if (!entity.cellTail || entity.cellTail.length === 0) {
+    initializeCellTail(entity);
+  }
+
+  const x = entity.renderX || entity.x;
+  const y = entity.renderY || entity.y;
+  const vx = entity.vx || 0;
+  const vy = entity.vy || 0;
+  const speed = Math.sqrt(vx * vx + vy * vy);
+
+  // Update cell's facing angle based on movement
+  if (speed > 0.1) {
+    entity.cellTailAngle = Math.atan2(vy, vx);
+  }
+
+  // Tail base position - on the back edge of the cell
+  const tailAngle = entity.cellTailAngle + Math.PI;
+  const baseX = x + Math.cos(tailAngle) * entity.radius * 0.8;
+  const baseY = y + Math.sin(tailAngle) * entity.radius * 0.8;
+
+  const segmentLength = CELL_TAIL_LENGTH / CELL_TAIL_SEGMENTS;
+
+  // Wiggle parameters (smaller than tadpole)
+  const baseWiggle = 0.3;
+  const speedWiggle = Math.min(speed * 1.5, 1.2);
+  const wiggleIntensity = baseWiggle + speedWiggle;
+  const wiggleSpeed = 8 + (speed * 6);
+
+  for (let i = 0; i < CELL_TAIL_SEGMENTS; i++) {
+    const segment = entity.cellTail[i];
+    const targetX = i === 0 ? baseX : entity.cellTail[i - 1].x;
+    const targetY = i === 0 ? baseY : entity.cellTail[i - 1].y;
+
+    // Wiggle motion
+    const segmentWiggle = Math.sin(time * wiggleSpeed + i * 0.6 + (entity.wiggleOffset || 0)) *
+                          wiggleIntensity * (i / CELL_TAIL_SEGMENTS) * 5;
+
+    const wiggleAngle = tailAngle + Math.PI / 2;
+    const wiggleX = Math.cos(wiggleAngle) * segmentWiggle;
+    const wiggleY = Math.sin(wiggleAngle) * segmentWiggle;
+
+    // Calculate segment position
+    const dx = segment.x - targetX;
+    const dy = segment.y - targetY;
+    const currentDist = Math.sqrt(dx * dx + dy * dy);
+
+    let angle;
+    if (currentDist > 1) {
+      angle = Math.atan2(dy, dx);
+    } else {
+      angle = tailAngle;
+    }
+
+    const newX = targetX + Math.cos(angle) * segmentLength + wiggleX;
+    const newY = targetY + Math.sin(angle) * segmentLength + wiggleY;
+
+    // Smooth interpolation
+    segment.x += (newX - segment.x) * 0.4;
+    segment.y += (newY - segment.y) * 0.4;
   }
 }
 
@@ -1185,7 +1319,140 @@ upgradeCloseBtn.addEventListener('click', () => {
   upgradeMenu.classList.add('hidden');
 });
 
-buyHealthBtn.addEventListener('click', () => {
+// Tab switching
+const tabTechnology = document.getElementById('tabTechnology');
+const tabEvolution = document.getElementById('tabEvolution');
+const pageTechnology = document.getElementById('pageTechnology');
+const pageEvolution = document.getElementById('pageEvolution');
+
+tabTechnology?.addEventListener('click', () => {
+  tabTechnology.classList.add('active');
+  tabEvolution.classList.remove('active');
+  pageTechnology.classList.remove('hidden');
+  pageEvolution.classList.add('hidden');
+});
+
+tabEvolution?.addEventListener('click', () => {
+  tabEvolution.classList.add('active');
+  tabTechnology.classList.remove('active');
+  pageEvolution.classList.remove('hidden');
+  pageTechnology.classList.add('hidden');
+});
+
+// Tech Tree click handlers (for tech nodes and evolution options)
+function handleTechClick(nodeId) {
+  // Check both tadpole and cell tech trees
+  const isCellTech = nodeId.startsWith('cellTech');
+  const techData = isCellTech ? cellTechNodes[nodeId] : techNodes[nodeId];
+  if (!techData) return;
+
+  if (selectedTadpoles.size === 0) return;
+  const selectedId = Array.from(selectedTadpoles)[0];
+  const selectedTad = myTadpoles.find(t => t.id === selectedId);
+  if (!selectedTad) return;
+
+  // Verify creature type matches tech tree
+  if (isCellTech && selectedTad.type !== 'cell') return;
+  if (!isCellTech && selectedTad.type === 'cell' && techData.type !== 'transform') return;
+
+  const currentFood = selectedTad.food || 0;
+  const techTree = isCellTech ? cellTechNodes : techNodes;
+
+  // Check if node is locked (prerequisite not met)
+  if (techData.requires) {
+    const reqNode = techTree[techData.requires];
+    if (reqNode) {
+      const reqLevel = getUpgradeLevel(selectedTad, reqNode.type);
+      if (reqLevel < reqNode.level) return; // Prerequisite not researched
+    }
+  }
+
+  // Check if already researched
+  const currentLevel = getUpgradeLevel(selectedTad, techData.type);
+  if (techData.type !== 'transform' && currentLevel >= techData.level) return;
+
+  // Check if can afford
+  if (currentFood < techData.cost) return;
+
+  // Apply the upgrade
+  selectedTad.food = currentFood - techData.cost;
+
+  // Tadpole upgrades
+  if (techData.type === 'health') {
+    healthUpgradeLevel = techData.level;
+    selectedTad.maxHealthBonus = HEALTH_BONUSES[healthUpgradeLevel - 1];
+    selectedTad.healthLevel = healthUpgradeLevel;
+    const maxHealth = MAX_HEALTH + selectedTad.maxHealthBonus;
+    selectedTad.health = Math.min((selectedTad.health || MAX_HEALTH) + 30, maxHealth);
+  } else if (techData.type === 'strength') {
+    strengthUpgradeLevel = techData.level;
+    selectedTad.strengthBonus = STRENGTH_BONUSES[strengthUpgradeLevel - 1];
+    selectedTad.strengthLevel = strengthUpgradeLevel;
+  } else if (techData.type === 'capacity') {
+    selectedTad.capacityLevel = techData.level;
+  } else if (techData.type === 'transform') {
+    if (selectedTad.type !== 'tadpole' || selectedTad.isTransforming) return;
+    selectedTad.isTransforming = true;
+    selectedTad.transformationStartTime = Date.now();
+    selectedTad.baseRadius = selectedTad.radius;
+    upgradeMenu.classList.add('hidden');
+  }
+  // Cell upgrades
+  else if (techData.type === 'cellHealth') {
+    selectedTad.cellHealthLevel = techData.level;
+    selectedTad.cellMaxHealthBonus = CELL_HEALTH_BONUSES[techData.level - 1];
+    const maxHealth = CELL_MAX_HEALTH + selectedTad.cellMaxHealthBonus;
+    selectedTad.health = Math.min((selectedTad.health || CELL_MAX_HEALTH) + 40, maxHealth);
+    // Level 2+ gives health regen boost
+    if (techData.level >= 2) {
+      selectedTad.regenBoost = techData.level === 2 ? 1.5 : 2.0;
+    }
+  } else if (techData.type === 'cellStrength') {
+    selectedTad.cellStrengthLevel = techData.level;
+    selectedTad.cellStrengthBonus = CELL_STRENGTH_BONUSES[techData.level - 1];
+  } else if (techData.type === 'cellCapacity') {
+    selectedTad.cellCapacityLevel = techData.level;
+    selectedTad.cellCapacityBonus = CELL_CAPACITY_BONUSES[techData.level - 1];
+  } else if (techData.type === 'cellSpeed') {
+    selectedTad.cellSpeedLevel = techData.level;
+    selectedTad.cellSpeedBonus = CELL_SPEED_BONUSES[techData.level - 1];
+    // Level 2 gives a tail!
+    if (techData.level >= 2 && !selectedTad.cellTail) {
+      selectedTad.cellTail = []; // Initialize tail array - will be populated in update
+      selectedTad.hasCellTail = true;
+    }
+  }
+
+  updateUpgradeMenu();
+  updateSelectionCount();
+}
+
+// Tech nodes (both tadpole and cell)
+document.querySelectorAll('.tech-node').forEach(node => {
+  node.addEventListener('click', () => handleTechClick(node.id));
+});
+
+// Evolution options
+document.querySelectorAll('.evolution-option').forEach(node => {
+  node.addEventListener('click', () => handleTechClick(node.id));
+});
+
+function getUpgradeLevel(tad, type) {
+  // Tadpole upgrades
+  if (type === 'health') return tad.healthLevel || 0;
+  if (type === 'strength') return tad.strengthLevel || 0;
+  if (type === 'capacity') return tad.capacityLevel || 0;
+  if (type === 'transform') return tad.type === 'cell' ? 1 : 0;
+  // Cell upgrades
+  if (type === 'cellHealth') return tad.cellHealthLevel || 0;
+  if (type === 'cellStrength') return tad.cellStrengthLevel || 0;
+  if (type === 'cellCapacity') return tad.cellCapacityLevel || 0;
+  if (type === 'cellSpeed') return tad.cellSpeedLevel || 0;
+  return 0;
+}
+
+// Legacy button handlers (kept for backward compatibility, buttons are hidden)
+buyHealthBtn?.addEventListener('click', () => {
   if (selectedTadpoles.size > 0) {
     const selectedId = Array.from(selectedTadpoles)[0];
     const selectedTad = myTadpoles.find(t => t.id === selectedId);
@@ -1219,7 +1486,7 @@ buyHealthBtn.addEventListener('click', () => {
   }
 });
 
-buyStrengthBtn.addEventListener('click', () => {
+buyStrengthBtn?.addEventListener('click', () => {
   if (selectedTadpoles.size > 0) {
     const selectedId = Array.from(selectedTadpoles)[0];
     const selectedTad = myTadpoles.find(t => t.id === selectedId);
@@ -1246,7 +1513,7 @@ buyStrengthBtn.addEventListener('click', () => {
   }
 });
 
-buyCapacityBtn.addEventListener('click', () => {
+buyCapacityBtn?.addEventListener('click', () => {
   if (selectedTadpoles.size > 0) {
     const selectedId = Array.from(selectedTadpoles)[0];
     const selectedTad = myTadpoles.find(t => t.id === selectedId);
@@ -1273,7 +1540,7 @@ buyCapacityBtn.addEventListener('click', () => {
   }
 });
 
-transformCellBtn.addEventListener('click', () => {
+transformCellBtn?.addEventListener('click', () => {
   if (selectedTadpoles.size > 0) {
     const selectedId = Array.from(selectedTadpoles)[0];
     const selectedTad = myTadpoles.find(t => t.id === selectedId);
@@ -1306,29 +1573,89 @@ function updateUpgradeMenu() {
   if (!selectedTad) return;
 
   const currentFood = selectedTad.food || 0;
+  const isCell = selectedTad.type === 'cell';
+
+  // Show/hide the appropriate tech tree
+  const tadpoleTechTree = document.getElementById('tadpoleTechTree');
+  const cellTechTree = document.getElementById('cellTechTree');
+  if (tadpoleTechTree && cellTechTree) {
+    if (isCell) {
+      tadpoleTechTree.classList.add('hidden');
+      cellTechTree.classList.remove('hidden');
+    } else {
+      tadpoleTechTree.classList.remove('hidden');
+      cellTechTree.classList.add('hidden');
+    }
+  }
+
+  // Helper function to update tech nodes
+  function updateTechTree(techTree) {
+    Object.keys(techTree).forEach(nodeId => {
+      const techData = techTree[nodeId];
+      const node = document.getElementById(nodeId);
+      if (!node) return;
+
+      const currentLevel = getUpgradeLevel(selectedTad, techData.type);
+      const isResearched = techData.type === 'transform'
+        ? selectedTad.type === 'cell'
+        : currentLevel >= techData.level;
+
+      // Check if prerequisite is met
+      let isLocked = false;
+      if (techData.requires) {
+        const reqNode = techTree[techData.requires];
+        if (reqNode) {
+          const reqLevel = getUpgradeLevel(selectedTad, reqNode.type);
+          isLocked = reqLevel < reqNode.level;
+        }
+      }
+
+      // For non-researched nodes, also check if previous level is researched
+      if (!isResearched && !isLocked && techData.level > 1) {
+        const prevLevel = currentLevel;
+        if (prevLevel < techData.level - 1) {
+          isLocked = true;
+        }
+      }
+
+      // Check affordability (unlocked but can't afford)
+      const canAfford = currentFood >= techData.cost;
+      const isUnaffordable = !isResearched && !isLocked && !canAfford;
+
+      // Update node classes
+      node.classList.remove('researched', 'locked', 'unaffordable');
+      if (isResearched) {
+        node.classList.add('researched');
+      } else if (isLocked) {
+        node.classList.add('locked');
+      } else if (isUnaffordable) {
+        node.classList.add('unaffordable');
+      }
+
+      // Update cost display (for tech-cost or evolution-cost)
+      const costEl = node.querySelector('.tech-cost span') || node.querySelector('.evolution-cost span');
+      if (costEl) {
+        if (isResearched) {
+          costEl.textContent = '✓';
+        } else {
+          costEl.textContent = techData.cost;
+        }
+      }
+    });
+  }
+
+  // Update both tech trees (tadpole and cell)
+  updateTechTree(techNodes);
+  updateTechTree(cellTechNodes);
+
+  // Legacy: update hidden elements (backward compatibility)
   const healthMaxed = healthUpgradeLevel >= MAX_UPGRADE_LEVEL;
   const strengthMaxed = strengthUpgradeLevel >= MAX_UPGRADE_LEVEL;
   const capacityLevel = selectedTad.capacityLevel || 0;
-  const capacityMaxed = capacityLevel >= MAX_CAPACITY_LEVEL || selectedTad.type === 'cell';
-  const healthCost = healthMaxed ? 0 : HEALTH_UPGRADE_COSTS[healthUpgradeLevel];
-  const strengthCost = strengthMaxed ? 0 : STRENGTH_UPGRADE_COSTS[strengthUpgradeLevel];
-  const capacityCost = capacityMaxed ? 0 : CAPACITY_UPGRADE_COSTS[capacityLevel];
 
-  // Update levels (show level/max)
-  healthUpgradeLevelEl.textContent = `${healthUpgradeLevel}/${MAX_UPGRADE_LEVEL}`;
-  strengthUpgradeLevelEl.textContent = `${strengthUpgradeLevel}/${MAX_UPGRADE_LEVEL}`;
-  capacityUpgradeLevelEl.textContent = `${capacityLevel}`;
-
-  // Update costs (show MAX if maxed)
-  healthUpgradeCostEl.textContent = healthMaxed ? 'MAX' : healthCost;
-  strengthUpgradeCostEl.textContent = strengthMaxed ? 'MAX' : strengthCost;
-  capacityUpgradeCostEl.textContent = capacityMaxed ? 'MAX' : capacityCost;
-
-  // Enable/disable buttons based on food availability and max level
-  buyHealthBtn.disabled = healthMaxed || currentFood < healthCost;
-  buyStrengthBtn.disabled = strengthMaxed || currentFood < strengthCost;
-  buyCapacityBtn.disabled = capacityMaxed || currentFood < capacityCost;
-  transformCellBtn.disabled = selectedTad.type !== 'tadpole' || currentFood < 5;
+  if (healthUpgradeLevelEl) healthUpgradeLevelEl.textContent = `${healthUpgradeLevel}/${MAX_UPGRADE_LEVEL}`;
+  if (strengthUpgradeLevelEl) strengthUpgradeLevelEl.textContent = `${strengthUpgradeLevel}/${MAX_UPGRADE_LEVEL}`;
+  if (capacityUpgradeLevelEl) capacityUpgradeLevelEl.textContent = `${capacityLevel}`;
 }
 
 function updateCreatureList() {
@@ -1855,8 +2182,18 @@ function update(deltaTime = 1) {
                 damage: damage
               });
               // Don't apply damage locally - server will broadcast npcDamaged event
+            } else if (players[currentAttackTarget.id]) {
+              // Attacking another player - send to server to forward to them
+              socket.emit('attackPlayer', {
+                targetId: currentAttackTarget.id,
+                damage: damage,
+                knockbackX: Math.cos(angle) * 1,
+                knockbackY: Math.sin(angle) * 1
+              });
+              // Show damage text locally for attacker feedback
+              spawnDamageText(currentAttackTarget.x, currentAttackTarget.y, damage);
             } else {
-              // Attacking another player or local entity - apply damage locally
+              // Attacking local entity (own tadpole?) - apply damage locally
               currentAttackTarget.health -= damage;
               currentAttackTarget.lastHit = Date.now();
 
@@ -2004,7 +2341,11 @@ function update(deltaTime = 1) {
     }
 
     // Apply movement
-    const moveSpeed = tad.type === 'cell' ? MOVE_SPEED * 0.4 : MOVE_SPEED;
+    let moveSpeed = tad.type === 'cell' ? MOVE_SPEED * 0.4 : MOVE_SPEED;
+    // Apply cell speed bonus from upgrades
+    if (tad.type === 'cell' && tad.cellSpeedBonus) {
+      moveSpeed *= (1 + tad.cellSpeedBonus);
+    }
     if (dx !== 0 || dy !== 0) {
       tad.vx += dx * moveSpeed;
       tad.vy += dy * moveSpeed;
@@ -2223,6 +2564,9 @@ function update(deltaTime = 1) {
         tad.isHibernating = false;
         tad.hibernationStartTime = null;
 
+        // Update UI to reset hibernate button
+        updateSelectionCount();
+
         console.log('Hibernation complete! New tadpole spawned.');
       }
     }
@@ -2267,6 +2611,9 @@ function update(deltaTime = 1) {
         tad.transformationStartTime = null;
         tad.baseRadius = null;
 
+        // Update UI to show hibernate button for cell
+        updateSelectionCount();
+
         console.log('Transformation complete! Now a cell.');
       }
     }
@@ -2279,6 +2626,10 @@ function update(deltaTime = 1) {
     // Only update tail for tadpoles, not cells
     if (tad.type === 'tadpole') {
       updateTail(tad, time);
+    }
+    // Update cell tail for cells with speed upgrade level 2+
+    if (tad.type === 'cell' && tad.hasCellTail) {
+      updateCellTail(tad, time);
     }
   }
 
@@ -2376,20 +2727,11 @@ function handleDeath(entity) {
     duration: 2000 // 2 seconds - slowly vanishes
   });
 
-  // Determine food count based on stored food (60-80% of stored food is dropped)
-  const storedFood = entity.food || 0;
-  const dropPercentage = 0.6 + Math.random() * 0.2; // 60-80%
-  const foodFromStorage = Math.floor(storedFood * dropPercentage);
-
-  // Minimum 2 food items, plus what they were storing
-  const foodCount = Math.max(2, foodFromStorage);
-
-  // Request server to spawn food at death location
-  // This ensures food is properly synced and edible
+  // Always drop exactly 1 food item on death
   socket.emit('spawnDeathFood', {
     x: entity.x,
     y: entity.y,
-    count: foodCount
+    count: 1
   });
 
   if (myTadpoles.includes(entity)) {
@@ -2837,10 +3179,29 @@ function render() {
 
   ctx.restore();
 
+  // Draw soft vignette effect (screen-space overlay)
+  drawVignette();
+
   // Draw minimap
   if (myTadpoles.length > 0) {
     drawMinimap();
   }
+}
+
+function drawVignette() {
+  // Create radial gradient from center (transparent) to edges (dark)
+  const centerX = canvas.width / 2;
+  const centerY = canvas.height / 2;
+  // Use the diagonal distance to ensure vignette covers corners
+  const radius = Math.sqrt(centerX * centerX + centerY * centerY);
+
+  const vignette = ctx.createRadialGradient(centerX, centerY, radius * 0.4, centerX, centerY, radius);
+  vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  vignette.addColorStop(0.7, 'rgba(0, 0, 0, 0)');
+  vignette.addColorStop(1, 'rgba(0, 0, 0, 0.35)');
+
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
 
 function drawEntity(entity, isMe, isNPC, isSelected = false) {
@@ -3336,6 +3697,36 @@ function drawCell(entity, isMe, isSelected) {
   const swimAngle = Math.sin(swimPhase) * 0.08; // Gentle rotation
   const swimPulse = Math.sin(swimPhase * 1.5) * 0.03; // Slight pulsing
 
+  // Draw cell tail (if has Motor Tail upgrade - speed level 2+)
+  if (entity.hasCellTail && entity.cellTail && entity.cellTail.length > 1) {
+    // Calculate tail base position on the back edge
+    const tailAngle = (entity.cellTailAngle || entity.angle || 0) + Math.PI;
+    const baseX = x + Math.cos(tailAngle) * entity.radius * 0.8;
+    const baseY = y + Math.sin(tailAngle) * entity.radius * 0.8;
+
+    // Draw the tail
+    ctx.beginPath();
+    ctx.moveTo(baseX, baseY);
+
+    for (let i = 0; i < entity.cellTail.length - 1; i++) {
+      const xc = (entity.cellTail[i].x + entity.cellTail[i + 1].x) / 2;
+      const yc = (entity.cellTail[i].y + entity.cellTail[i + 1].y) / 2;
+      ctx.quadraticCurveTo(entity.cellTail[i].x, entity.cellTail[i].y, xc, yc);
+    }
+
+    // Create gradient for tail
+    const lastSeg = entity.cellTail[entity.cellTail.length - 1];
+    const gradient = ctx.createLinearGradient(baseX, baseY, lastSeg.x, lastSeg.y);
+    gradient.addColorStop(0, entity.color);
+    gradient.addColorStop(1, hexToRGBA(entity.color, 0.6));
+
+    ctx.strokeStyle = gradient;
+    ctx.lineWidth = entity.radius * 0.5; // Thinner than tadpole tail
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+  }
+
   // Draw upgrade glow aura (before main cell)
   if (upgradeGlow > 0 && isMe) {
     ctx.save();
@@ -3357,7 +3748,7 @@ function drawCell(entity, isMe, isSelected) {
   ctx.rotate(entity.angle + swimAngle);
   ctx.scale((1 + swimPulse) * upgradeSizeBonus, (1 + swimPulse) * upgradeSizeBonus);
 
-  // Apply squish effect if attacking
+  // Apply squish effect if attacking (reduced for cells - they're more rigid)
   if (entity.attackSquish) {
     // Calculate squish direction relative to body angle
     const squishAngle = entity.attackSquishAngle - entity.angle;
@@ -3366,8 +3757,10 @@ function drawCell(entity, isMe, isSelected) {
     ctx.rotate(squishAngle);
 
     // Compress along attack axis, expand perpendicular (preserve volume)
-    const compress = 1 - entity.attackSquish;
-    const expand = 1 + entity.attackSquish * 0.8;
+    // Cells squish less (40% of normal squish)
+    const reducedSquish = entity.attackSquish * 0.4;
+    const compress = 1 - reducedSquish;
+    const expand = 1 + reducedSquish * 0.8;
     ctx.scale(compress, expand);
 
     // Rotate back
@@ -3390,6 +3783,16 @@ function drawCell(entity, isMe, isSelected) {
 
   ctx.fillStyle = entity.color;
   ctx.fill();
+
+  // Red shade when sprinting to attack (gradient - most red in center)
+  if (entity.isSprinting) {
+    const redGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, entity.radius);
+    redGradient.addColorStop(0, 'rgba(200, 30, 30, 0.5)');
+    redGradient.addColorStop(0.6, 'rgba(180, 40, 40, 0.25)');
+    redGradient.addColorStop(1, 'rgba(150, 50, 50, 0)');
+    ctx.fillStyle = redGradient;
+    ctx.fill();
+  }
 
   // Health upgrade: inner highlight glow
   if (healthLvl > 0 && isMe) {

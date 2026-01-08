@@ -38,66 +38,341 @@
     <button id="restartBtn">Restart</button>
   </div>
 
-  <!-- Upgrade Menu -->
+  <!-- Upgrade Menu - Tabbed Technology/Evolution -->
   <div id="upgradeMenu" class="upgrade-menu hidden">
     <div class="upgrade-container">
       <button class="upgrade-close-btn" id="upgradeCloseBtn">×</button>
 
-      <div class="upgrade-content">
-        <!-- Left Side: Upgrade Tree -->
-        <div class="upgrade-section upgrade-tree-section">
-          <h2>Upgrade Tree</h2>
-          <div class="upgrade-tree">
-            <div class="upgrade-option">
-              <div class="upgrade-option-header">
-                <h3>Health</h3>
-                <span class="upgrade-level">Level: <span id="healthUpgradeLevel">0</span></span>
-              </div>
-              <p class="upgrade-description">Increase maximum health by 20</p>
-              <div class="upgrade-cost">Cost: <span id="healthUpgradeCost">5</span> food</div>
-              <button class="upgrade-buy-btn" id="buyHealthBtn">Upgrade Health</button>
+      <!-- Tab Navigation -->
+      <div class="upgrade-tabs">
+        <button class="upgrade-tab active" id="tabTechnology">Technology</button>
+        <button class="upgrade-tab" id="tabEvolution">Evolution</button>
+      </div>
+
+      <!-- Technology Page - Tadpole Tech Tree -->
+      <div class="upgrade-page" id="pageTechnology">
+        <div class="tech-panel" id="tadpoleTechTree">
+          <h1 class="panel-title">Technology</h1>
+
+          <div class="tech-tree-branch">
+            <!-- Root - splits into Health and Strength -->
+            <div class="tree-root">
+              <div class="root-connector"></div>
             </div>
 
-            <div class="upgrade-option">
-              <div class="upgrade-option-header">
-                <h3>Strength</h3>
-                <span class="upgrade-level">Level: <span id="strengthUpgradeLevel">0</span></span>
-              </div>
-              <p class="upgrade-description">Increase attack damage by 10</p>
-              <div class="upgrade-cost">Cost: <span id="strengthUpgradeCost">5</span> food</div>
-              <button class="upgrade-buy-btn" id="buyStrengthBtn">Upgrade Strength</button>
-            </div>
+            <!-- Two main branches -->
+            <div class="tree-branches">
+              <!-- Health Branch (left) -->
+              <div class="branch health-branch">
+                <div class="branch-line"></div>
 
-            <div class="upgrade-option">
-              <div class="upgrade-option-header">
-                <h3>Capacity</h3>
-                <span class="upgrade-level">Level: <span id="capacityUpgradeLevel">0</span>/3</span>
+                <!-- Membrane - Health I -->
+                <div class="tech-node" id="techMembrane" data-type="health" data-level="1">
+                  <div class="tech-node-inner">
+                    <div class="tech-icon">⬡</div>
+                    <div class="tech-name">Membrane</div>
+                    <div class="tech-effect">+20 health</div>
+                    <div class="tech-cost"><span id="membraneCost">5</span> food</div>
+                  </div>
+                </div>
+
+                <!-- Branch splits: Cytoplasm and Vacuole -->
+                <div class="sub-branches">
+                  <div class="sub-branch-lines"></div>
+
+                  <!-- Cytoplasm sub-branch (continues health) -->
+                  <div class="sub-branch">
+                    <div class="tech-node locked" id="techCytoplasm" data-type="health" data-level="2">
+                      <div class="tech-node-inner">
+                        <div class="tech-icon">⬢</div>
+                        <div class="tech-name">Cytoplasm</div>
+                        <div class="tech-effect">+20 health</div>
+                        <div class="tech-cost"><span id="cytoplasmCost">8</span> food</div>
+                      </div>
+                    </div>
+
+                    <div class="branch-connector"></div>
+
+                    <div class="tech-node locked" id="techNucleus" data-type="health" data-level="3">
+                      <div class="tech-node-inner">
+                        <div class="tech-icon">⬣</div>
+                        <div class="tech-name">Nucleus</div>
+                        <div class="tech-effect">+20 health</div>
+                        <div class="tech-cost"><span id="nucleusCost">12</span> food</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Capacity sub-branch (branches from health) -->
+                  <div class="sub-branch capacity-branch">
+                    <div class="tech-node locked" id="techVacuole" data-type="capacity" data-level="1">
+                      <div class="tech-node-inner">
+                        <div class="tech-icon">◯</div>
+                        <div class="tech-name">Vacuole</div>
+                        <div class="tech-effect">+7 capacity</div>
+                        <div class="tech-cost"><span id="vacuoleCost">3</span> food</div>
+                      </div>
+                    </div>
+
+                    <div class="branch-connector"></div>
+
+                    <div class="tech-node locked" id="techLysosome" data-type="capacity" data-level="2">
+                      <div class="tech-node-inner">
+                        <div class="tech-icon">◎</div>
+                        <div class="tech-name">Lysosome</div>
+                        <div class="tech-effect">+7 capacity</div>
+                        <div class="tech-cost"><span id="lysosomeCost">5</span> food</div>
+                      </div>
+                    </div>
+
+                    <div class="branch-connector"></div>
+
+                    <div class="tech-node locked" id="techVesicle" data-type="capacity" data-level="3">
+                      <div class="tech-node-inner">
+                        <div class="tech-icon">●</div>
+                        <div class="tech-name">Vesicle</div>
+                        <div class="tech-effect">+6 capacity</div>
+                        <div class="tech-cost"><span id="vesicleCost">8</span> food</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <p class="upgrade-description">Increase food capacity (+7 per level)</p>
-              <div class="upgrade-cost">Cost: <span id="capacityUpgradeCost">3</span> food</div>
-              <button class="upgrade-buy-btn" id="buyCapacityBtn">Upgrade Capacity</button>
+
+              <!-- Strength Branch (right) -->
+              <div class="branch strength-branch">
+                <div class="branch-line"></div>
+
+                <div class="tech-node" id="techFlagellum" data-type="strength" data-level="1">
+                  <div class="tech-node-inner">
+                    <div class="tech-icon">⚡</div>
+                    <div class="tech-name">Flagellum</div>
+                    <div class="tech-effect">+10 damage</div>
+                    <div class="tech-cost"><span id="flagellumCost">5</span> food</div>
+                  </div>
+                </div>
+
+                <div class="branch-connector"></div>
+
+                <div class="tech-node locked" id="techPseudopod" data-type="strength" data-level="2">
+                  <div class="tech-node-inner">
+                    <div class="tech-icon">⚔</div>
+                    <div class="tech-name">Pseudopod</div>
+                    <div class="tech-effect">+10 damage</div>
+                    <div class="tech-cost"><span id="pseudopodCost">8</span> food</div>
+                  </div>
+                </div>
+
+                <div class="branch-connector"></div>
+
+                <div class="tech-node locked" id="techCytoskeleton" data-type="strength" data-level="3">
+                  <div class="tech-node-inner">
+                    <div class="tech-icon">⚒</div>
+                    <div class="tech-name">Cytoskeleton</div>
+                    <div class="tech-effect">+10 damage</div>
+                    <div class="tech-cost"><span id="cytoskeletonCost">12</span> food</div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- Right Side: Transform Options -->
-        <div class="upgrade-section transform-section">
-          <h2>Transform</h2>
-          <div class="transform-options">
-            <div class="transform-option">
-              <h3>Cell</h3>
-              <p class="transform-description">Transform into a larger, more powerful cell with hair-like appendages</p>
-              <div class="transform-stats">
-                <div>• Larger size</div>
-                <div>• Better health regeneration</div>
-                <div>• Can support other creatures</div>
+        <!-- Cell Tech Tree (hidden by default, shown when cell selected) -->
+        <div class="tech-panel hidden" id="cellTechTree">
+          <h1 class="panel-title">Cell Technology</h1>
+
+          <div class="tech-tree-branch">
+            <!-- Root - splits into Defense and Speed -->
+            <div class="tree-root">
+              <div class="root-connector cell-connector"></div>
+            </div>
+
+            <!-- Three main branches -->
+            <div class="tree-branches cell-branches">
+              <!-- Defense Branch (left) -->
+              <div class="branch defense-branch">
+                <div class="branch-line"></div>
+
+                <div class="tech-node cell-tech" id="cellTechWall" data-type="cellHealth" data-level="1">
+                  <div class="tech-node-inner">
+                    <div class="tech-icon">🛡</div>
+                    <div class="tech-name">Cell Wall</div>
+                    <div class="tech-effect">+30 health</div>
+                    <div class="tech-cost"><span id="cellWallCost">8</span> food</div>
+                  </div>
+                </div>
+
+                <!-- Branch splits: ER and Storage -->
+                <div class="sub-branches">
+                  <div class="sub-branch-lines"></div>
+
+                  <!-- ER sub-branch (continues defense) -->
+                  <div class="sub-branch">
+                    <div class="tech-node cell-tech locked" id="cellTechER" data-type="cellHealth" data-level="2">
+                      <div class="tech-node-inner">
+                        <div class="tech-icon">🔄</div>
+                        <div class="tech-name">ER Network</div>
+                        <div class="tech-effect">+30 HP, +regen</div>
+                        <div class="tech-cost"><span id="cellERCost">12</span> food</div>
+                      </div>
+                    </div>
+
+                    <div class="branch-connector"></div>
+
+                    <div class="tech-node cell-tech locked" id="cellTechGolgi" data-type="cellHealth" data-level="3">
+                      <div class="tech-node-inner">
+                        <div class="tech-icon">📦</div>
+                        <div class="tech-name">Golgi Body</div>
+                        <div class="tech-effect">+30 HP, ++regen</div>
+                        <div class="tech-cost"><span id="cellGolgiCost">18</span> food</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Storage sub-branch -->
+                  <div class="sub-branch storage-branch">
+                    <div class="tech-node cell-tech locked" id="cellTechStorage" data-type="cellCapacity" data-level="1">
+                      <div class="tech-node-inner">
+                        <div class="tech-icon">💧</div>
+                        <div class="tech-name">Vacuoles</div>
+                        <div class="tech-effect">+15 capacity</div>
+                        <div class="tech-cost"><span id="cellStorageCost">6</span> food</div>
+                      </div>
+                    </div>
+
+                    <div class="branch-connector"></div>
+
+                    <div class="tech-node cell-tech locked" id="cellTechLipid" data-type="cellCapacity" data-level="2">
+                      <div class="tech-node-inner">
+                        <div class="tech-icon">🫧</div>
+                        <div class="tech-name">Lipid Drops</div>
+                        <div class="tech-effect">+15 capacity</div>
+                        <div class="tech-cost"><span id="cellLipidCost">10</span> food</div>
+                      </div>
+                    </div>
+
+                    <div class="branch-connector"></div>
+
+                    <div class="tech-node cell-tech locked" id="cellTechGlycogen" data-type="cellCapacity" data-level="3">
+                      <div class="tech-node-inner">
+                        <div class="tech-icon">🔋</div>
+                        <div class="tech-name">Glycogen</div>
+                        <div class="tech-effect">+20 capacity</div>
+                        <div class="tech-cost"><span id="cellGlycogenCost">15</span> food</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div class="transform-cost">Cost: <span>20</span> food</div>
-              <button class="transform-btn" id="transformCellBtn">Transform to Cell</button>
+
+              <!-- Speed Branch (center) -->
+              <div class="branch speed-branch">
+                <div class="branch-line"></div>
+
+                <div class="tech-node cell-tech" id="cellTechCilia" data-type="cellSpeed" data-level="1">
+                  <div class="tech-node-inner">
+                    <div class="tech-icon">〰</div>
+                    <div class="tech-name">Cilia</div>
+                    <div class="tech-effect">+15% speed</div>
+                    <div class="tech-cost"><span id="cellCiliaCost">6</span> food</div>
+                  </div>
+                </div>
+
+                <div class="branch-connector"></div>
+
+                <div class="tech-node cell-tech locked" id="cellTechMotor" data-type="cellSpeed" data-level="2">
+                  <div class="tech-node-inner">
+                    <div class="tech-icon">🦠</div>
+                    <div class="tech-name">Motor Tail</div>
+                    <div class="tech-effect">+25% speed, tail</div>
+                    <div class="tech-cost"><span id="cellMotorCost">12</span> food</div>
+                  </div>
+                </div>
+
+                <div class="branch-connector"></div>
+
+                <div class="tech-node cell-tech locked" id="cellTechJet" data-type="cellSpeed" data-level="3">
+                  <div class="tech-node-inner">
+                    <div class="tech-icon">💨</div>
+                    <div class="tech-name">Jet Propel</div>
+                    <div class="tech-effect">+40% speed</div>
+                    <div class="tech-cost"><span id="cellJetCost">18</span> food</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Offense Branch (right) -->
+              <div class="branch offense-branch">
+                <div class="branch-line"></div>
+
+                <div class="tech-node cell-tech" id="cellTechEnzymes" data-type="cellStrength" data-level="1">
+                  <div class="tech-node-inner">
+                    <div class="tech-icon">🧪</div>
+                    <div class="tech-name">Enzymes</div>
+                    <div class="tech-effect">+15 damage</div>
+                    <div class="tech-cost"><span id="cellEnzymesCost">8</span> food</div>
+                  </div>
+                </div>
+
+                <div class="branch-connector"></div>
+
+                <div class="tech-node cell-tech locked" id="cellTechToxin" data-type="cellStrength" data-level="2">
+                  <div class="tech-node-inner">
+                    <div class="tech-icon">☠</div>
+                    <div class="tech-name">Toxins</div>
+                    <div class="tech-effect">+15 damage</div>
+                    <div class="tech-cost"><span id="cellToxinCost">12</span> food</div>
+                  </div>
+                </div>
+
+                <div class="branch-connector"></div>
+
+                <div class="tech-node cell-tech locked" id="cellTechPredator" data-type="cellStrength" data-level="3">
+                  <div class="tech-node-inner">
+                    <div class="tech-icon">🦷</div>
+                    <div class="tech-name">Predator</div>
+                    <div class="tech-effect">+20 damage</div>
+                    <div class="tech-cost"><span id="cellPredatorCost">18</span> food</div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
+
+      <!-- Evolution Page (hidden by default) -->
+      <div class="upgrade-page hidden" id="pageEvolution">
+        <div class="evolution-panel full-page">
+          <h1 class="panel-title">Evolution</h1>
+
+          <div class="evolution-options centered">
+            <div class="evolution-option locked" id="techMitosis" data-type="transform">
+              <div class="evolution-icon">❋</div>
+              <div class="evolution-content">
+                <div class="evolution-name">Mitosis</div>
+                <div class="evolution-desc">Transform into a Cell</div>
+                <div class="evolution-stats">
+                  <span>• Larger body</span>
+                  <span>• Health regeneration</span>
+                  <span>• Can support allies</span>
+                </div>
+                <div class="evolution-requires">Requires: Nucleus</div>
+                <div class="evolution-cost"><span id="mitosisCost">20</span> food</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hidden elements for backward compatibility -->
+      <span id="healthUpgradeLevel" class="hidden">0</span>
+      <span id="strengthUpgradeLevel" class="hidden">0</span>
+      <span id="capacityUpgradeLevel" class="hidden">0</span>
+      <span id="healthUpgradeCost" class="hidden">5</span>
+      <span id="strengthUpgradeCost" class="hidden">5</span>
+      <span id="capacityUpgradeCost" class="hidden">3</span>
     </div>
   </div>
 
