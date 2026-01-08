@@ -13,6 +13,8 @@ const healthStat = document.getElementById('healthStat');
 const strengthStat = document.getElementById('strengthStat');
 const foodStat = document.getElementById('foodStat');
 const foodCapacityStat = document.getElementById('foodCapacityStat');
+const nucleotideStat = document.getElementById('nucleotideStat');
+const nucleotideRow = document.getElementById('nucleotideRow');
 const creatureList = document.getElementById('creatureList');
 const upgradeMenu = document.getElementById('upgradeMenu');
 const upgradeCloseBtn = document.getElementById('upgradeCloseBtn');
@@ -27,6 +29,238 @@ const healthUpgradeCostEl = document.getElementById('healthUpgradeCost');
 const strengthUpgradeCostEl = document.getElementById('strengthUpgradeCost');
 const capacityUpgradeCostEl = document.getElementById('capacityUpgradeCost');
 const buyCapacityBtn = document.getElementById('buyCapacityBtn');
+
+// Tutorial system
+const tutorialTooltip = document.getElementById('tutorialTooltip');
+const tooltipText = document.getElementById('tooltipText');
+const tooltipDismiss = document.getElementById('tooltipDismiss');
+const tooltipArrow = tutorialTooltip.querySelector('.tooltip-arrow');
+
+const tutorialSteps = [
+  {
+    id: 'movement',
+    text: "Welcome, little one! Click anywhere to swim, or use Arrow Keys/WASD to explore.",
+    trigger: 'immediate',
+    dismissOn: 'movement' // Dismissed when player moves
+  },
+  {
+    id: 'food',
+    text: "Great! See those glowing orbs? Swim into them to collect food!",
+    trigger: 'afterMovement',
+    dismissOn: 'collectFood' // Dismissed when food is collected
+  },
+  {
+    id: 'upgrade',
+    text: "Nice catch! Right-click and select 'Upgrade' to grow stronger!",
+    trigger: 'hasFood',
+    dismissOn: 'upgrade' // Dismissed when upgrade is purchased
+  },
+  {
+    id: 'combat',
+    text: "You're getting stronger! Watch out for cells - they're dangerous. Good luck!",
+    trigger: 'afterUpgrade',
+    dismissOn: 'timeout' // Auto-dismiss after a few seconds
+  }
+];
+
+let tutorialState = {
+  currentStep: 0,
+  completed: JSON.parse(localStorage.getItem('tutorialCompleted') ?? 'true'), // Off by default, use /tutorial on to enable
+  hasMoved: false,
+  hasCollectedFood: false,
+  hasUpgraded: false,
+  movementDistance: 0,
+  startPos: null,
+  tooltipVisible: false,
+  tooltipTimeout: null
+};
+
+function showTutorialTooltip(step) {
+  if (tutorialState.completed) return;
+  if (tutorialState.tooltipVisible) return; // Don't show if already showing
+
+  const stepData = tutorialSteps[step];
+  if (!stepData) return;
+
+  tooltipText.textContent = stepData.text;
+  tooltipDismiss.style.display = 'none'; // Hide the button
+
+  // Set initial position above player (center of screen initially)
+  const screenCenterX = canvas.width / 2;
+  const screenCenterY = canvas.height / 2;
+  const offset = 120;
+
+  tutorialTooltip.style.left = screenCenterX + 'px';
+  tutorialTooltip.style.top = (screenCenterY - offset) + 'px';
+  tutorialTooltip.style.transform = 'translate(-50%, -100%)';
+  tooltipArrow.style.display = 'block';
+  tooltipArrow.style.left = '50%';
+  tooltipArrow.style.bottom = '-10px';
+  tooltipArrow.style.transform = 'translateX(-50%)';
+
+  tutorialTooltip.classList.remove('hidden');
+  tutorialState.tooltipVisible = true;
+
+  // Auto-dismiss timeout for the last step
+  if (stepData.dismissOn === 'timeout') {
+    tutorialState.tooltipTimeout = setTimeout(() => {
+      advanceTutorial();
+    }, 5000);
+  }
+}
+
+function updateTooltipPosition() {
+  if (!tutorialState.tooltipVisible) return;
+  if (myTadpoles.length === 0) return;
+  if (!camera) return;
+
+  const tad = myTadpoles[0];
+  // Convert world position to screen position
+  const screenX = (tad.x - camera.x) * camera.zoom + canvas.width / 2;
+  const screenY = (tad.y - camera.y) * camera.zoom + canvas.height / 2;
+
+  // Responsive tooltip sizing
+  const tooltipWidth = Math.min(280, canvas.width * 0.8);
+  const tooltipHeight = 80;
+  const offset = Math.max(80, canvas.height * 0.1); // Distance above player
+
+  let tooltipX = screenX;
+  let tooltipY = screenY - offset;
+
+  // Keep tooltip on screen
+  tooltipX = Math.max(tooltipWidth / 2 + 10, Math.min(canvas.width - tooltipWidth / 2 - 10, tooltipX));
+  tooltipY = Math.max(20, tooltipY);
+
+  // If too close to top, put it below instead
+  if (tooltipY < 60) {
+    tooltipY = screenY + offset * 0.8;
+    tooltipArrow.style.bottom = 'auto';
+    tooltipArrow.style.top = '-10px';
+    tooltipArrow.style.transform = 'translateX(-50%) rotate(180deg)';
+    tutorialTooltip.style.transform = 'translate(-50%, 0)';
+  } else {
+    tooltipArrow.style.bottom = '-10px';
+    tooltipArrow.style.top = 'auto';
+    tooltipArrow.style.transform = 'translateX(-50%)';
+    tutorialTooltip.style.transform = 'translate(-50%, -100%)';
+  }
+
+  tutorialTooltip.style.left = tooltipX + 'px';
+  tutorialTooltip.style.top = tooltipY + 'px';
+  tooltipArrow.style.display = 'block';
+  tooltipArrow.style.left = '50%';
+}
+
+function hideTutorialTooltip() {
+  tutorialTooltip.classList.add('hidden');
+  tutorialState.tooltipVisible = false;
+  if (tutorialState.tooltipTimeout) {
+    clearTimeout(tutorialState.tooltipTimeout);
+    tutorialState.tooltipTimeout = null;
+  }
+}
+
+function advanceTutorial() {
+  hideTutorialTooltip();
+  tutorialState.currentStep++;
+
+  if (tutorialState.currentStep >= tutorialSteps.length) {
+    // Tutorial complete
+    tutorialState.completed = true;
+    localStorage.setItem('tutorialCompleted', 'true');
+    return;
+  }
+
+  // Check if next step should show immediately
+  checkTutorialTriggers();
+}
+
+function checkTutorialTriggers() {
+  if (tutorialState.completed) return;
+  if (tutorialState.currentStep >= tutorialSteps.length) return;
+
+  const currentStepData = tutorialSteps[tutorialState.currentStep];
+
+  switch (currentStepData.trigger) {
+    case 'immediate':
+      setTimeout(() => showTutorialTooltip(tutorialState.currentStep), 1000);
+      break;
+    case 'afterMovement':
+      if (tutorialState.movementDistance > 200) {
+        setTimeout(() => showTutorialTooltip(tutorialState.currentStep), 500);
+      }
+      break;
+    case 'hasFood':
+      if (tutorialState.hasCollectedFood) {
+        setTimeout(() => showTutorialTooltip(tutorialState.currentStep), 500);
+      }
+      break;
+    case 'afterUpgrade':
+      if (tutorialState.hasUpgraded) {
+        setTimeout(() => showTutorialTooltip(tutorialState.currentStep), 500);
+      }
+      break;
+  }
+}
+
+function checkTutorialDismiss() {
+  if (!tutorialState.tooltipVisible) return;
+  if (tutorialState.currentStep >= tutorialSteps.length) return;
+
+  const currentStepData = tutorialSteps[tutorialState.currentStep];
+
+  switch (currentStepData.dismissOn) {
+    case 'movement':
+      if (tutorialState.movementDistance > 100) {
+        advanceTutorial();
+      }
+      break;
+    case 'collectFood':
+      if (tutorialState.hasCollectedFood) {
+        advanceTutorial();
+      }
+      break;
+    case 'upgrade':
+      if (tutorialState.hasUpgraded) {
+        advanceTutorial();
+      }
+      break;
+    // 'timeout' is handled in showTutorialTooltip
+  }
+}
+
+function updateTutorialProgress() {
+  if (tutorialState.completed) return;
+
+  // Track movement distance
+  if (myTadpoles.length > 0) {
+    const tad = myTadpoles[0];
+    if (!tutorialState.startPos) {
+      tutorialState.startPos = { x: tad.x, y: tad.y };
+    } else {
+      const dx = tad.x - tutorialState.startPos.x;
+      const dy = tad.y - tutorialState.startPos.y;
+      tutorialState.movementDistance = Math.sqrt(dx * dx + dy * dy);
+    }
+
+    // Check if player collected food
+    if ((tad.food || 0) > 0 && !tutorialState.hasCollectedFood) {
+      tutorialState.hasCollectedFood = true;
+    }
+  }
+
+  // Update tooltip position to follow player
+  updateTooltipPosition();
+
+  // Check if current step should be dismissed
+  checkTutorialDismiss();
+
+  // Check if next step should trigger
+  checkTutorialTriggers();
+}
+
+// Tutorial dismiss button handler (fallback)
+tooltipDismiss.addEventListener('click', advanceTutorial);
 
 // Tech Tree nodes - Health and Strength are root branches, Capacity branches from Health
 const techNodes = {
@@ -322,11 +556,21 @@ function updateStatsDisplay() {
     strengthStat.textContent = Math.round(playerStrength);
     foodStat.textContent = displayTad.food || 0;
     foodCapacityStat.textContent = getFoodCapacity(displayTad);
+    const nucleotides = displayTad.nucleotides || 0;
+    nucleotideStat.textContent = nucleotides;
+    // Only show nucleotide row when player has collected one
+    if (nucleotides > 0) {
+      nucleotideRow.classList.remove('hidden');
+    } else {
+      nucleotideRow.classList.add('hidden');
+    }
   } else {
     healthStat.textContent = '0';
     strengthStat.textContent = '0';
     foodStat.textContent = '0';
     foodCapacityStat.textContent = '0';
+    nucleotideStat.textContent = '0';
+    nucleotideRow.classList.add('hidden');
   }
 }
 
@@ -373,6 +617,10 @@ socket.on('init', (data) => {
     npc.renderX = npc.x;
     npc.renderY = npc.y;
   });
+
+  // Initialize tutorial for new players
+  tutorialState.startPos = { x: player.x, y: player.y };
+  checkTutorialTriggers();
 });
 
 socket.on('players', (serverPlayers) => {
@@ -616,6 +864,7 @@ socket.on('npcUpdate', (serverNpcs) => {
       const npc = { ...serverNpc };
       npc.renderX = npc.x;
       npc.renderY = npc.y;
+      npc.spawnTime = Date.now(); // For spawn animation
       if (npc.type === 'cell') {
         npc.angle = 0;
         npc.wiggleOffset = Math.random() * Math.PI * 2;
@@ -840,6 +1089,45 @@ nameInput.addEventListener('keydown', (e) => {
       socket.emit('resetWorld');
       nameInput.value = '';
       console.log('World reset requested');
+      return;
+    }
+
+    if (input === '/tutorial' || input === '/tutorial off') {
+      tutorialState.completed = true;
+      localStorage.setItem('tutorialCompleted', 'true');
+      hideTutorialTooltip();
+      nameInput.value = '';
+      console.log('Tutorial disabled');
+      return;
+    }
+
+    if (input === '/tutorial on' || input === '/tutorial reset') {
+      tutorialState.completed = false;
+      tutorialState.currentStep = 0;
+      tutorialState.hasCollectedFood = false;
+      tutorialState.hasUpgraded = false;
+      tutorialState.movementDistance = 0;
+      tutorialState.startPos = myTadpoles.length > 0 ? { x: myTadpoles[0].x, y: myTadpoles[0].y } : null;
+      localStorage.setItem('tutorialCompleted', 'false');
+      nameInput.value = '';
+      console.log('Tutorial reset');
+      checkTutorialTriggers();
+      return;
+    }
+
+    if (input === '/mitosis') {
+      if (myTadpoles.length > 0) {
+        const selectedId = selectedTadpoles.size > 0 ? Array.from(selectedTadpoles)[0] : myTadpoles[0].id;
+        const selectedTad = myTadpoles.find(t => t.id === selectedId);
+        if (selectedTad && selectedTad.type === 'tadpole' && !selectedTad.isTransforming) {
+          // Start transformation without cost
+          selectedTad.isTransforming = true;
+          selectedTad.transformationStartTime = Date.now();
+          selectedTad.baseRadius = selectedTad.radius;
+          nameInput.value = '';
+          console.log('Mitosis cheat: transformation started without cost');
+        }
+      }
       return;
     }
 
@@ -1377,6 +1665,11 @@ function handleTechClick(nodeId) {
   // Apply the upgrade
   selectedTad.food = currentFood - techData.cost;
 
+  // Mark tutorial progress
+  if (!tutorialState.hasUpgraded) {
+    tutorialState.hasUpgraded = true;
+  }
+
   // Tadpole upgrades
   if (techData.type === 'health') {
     healthUpgradeLevel = techData.level;
@@ -1392,6 +1685,11 @@ function handleTechClick(nodeId) {
     selectedTad.capacityLevel = techData.level;
   } else if (techData.type === 'transform') {
     if (selectedTad.type !== 'tadpole' || selectedTad.isTransforming) return;
+    // Require 1 nucleotide for evolution
+    const nucleotides = selectedTad.nucleotides || 0;
+    if (nucleotides < 1) return;
+    // Consume the nucleotide
+    selectedTad.nucleotides = 0;
     selectedTad.isTransforming = true;
     selectedTad.transformationStartTime = Date.now();
     selectedTad.baseRadius = selectedTad.radius;
@@ -1590,6 +1888,16 @@ function updateUpgradeMenu() {
 
   // Helper function to update tech nodes
   function updateTechTree(techTree) {
+    // First pass: determine the max researched level for each type
+    const maxResearchedLevel = {};
+    Object.keys(techTree).forEach(nodeId => {
+      const techData = techTree[nodeId];
+      const currentLevel = getUpgradeLevel(selectedTad, techData.type);
+      if (!maxResearchedLevel[techData.type] || currentLevel > maxResearchedLevel[techData.type]) {
+        maxResearchedLevel[techData.type] = currentLevel;
+      }
+    });
+
     Object.keys(techTree).forEach(nodeId => {
       const techData = techTree[nodeId];
       const node = document.getElementById(nodeId);
@@ -1619,13 +1927,25 @@ function updateUpgradeMenu() {
       }
 
       // Check affordability (unlocked but can't afford)
-      const canAfford = currentFood >= techData.cost;
+      let canAfford = currentFood >= techData.cost;
+      // Transform also requires 1 nucleotide
+      if (techData.type === 'transform') {
+        const nucleotides = selectedTad.nucleotides || 0;
+        canAfford = canAfford && nucleotides >= 1;
+      }
       const isUnaffordable = !isResearched && !isLocked && !canAfford;
 
+      // Check fog of war: node is 2+ levels beyond current progress
+      const myResearchedLevel = maxResearchedLevel[techData.type] || 0;
+      const levelsAhead = techData.level - myResearchedLevel;
+      const isFogged = isLocked && levelsAhead >= 2;
+
       // Update node classes
-      node.classList.remove('researched', 'locked', 'unaffordable');
+      node.classList.remove('researched', 'locked', 'unaffordable', 'fog');
       if (isResearched) {
         node.classList.add('researched');
+      } else if (isFogged) {
+        node.classList.add('locked', 'fog');
       } else if (isLocked) {
         node.classList.add('locked');
       } else if (isUnaffordable) {
@@ -1637,6 +1957,8 @@ function updateUpgradeMenu() {
       if (costEl) {
         if (isResearched) {
           costEl.textContent = '✓';
+        } else if (isFogged) {
+          costEl.textContent = '?';
         } else {
           costEl.textContent = techData.cost;
         }
@@ -1857,6 +2179,32 @@ function update(deltaTime = 1) {
     } else {
       npc.renderX = npc.x;
       npc.renderY = npc.y;
+    }
+
+    // Make NPC face toward nearest player/tadpole (unless attacking)
+    const isLunging = npc.attackLungeTime && (now - npc.attackLungeTime) < ATTACK_LUNGE_DURATION * 2.5;
+    if (!isLunging) {
+      // Find nearest target (player's tadpoles)
+      let nearestDist = Infinity;
+      let nearestTarget = null;
+      for (let tad of myTadpoles) {
+        const dx = tad.x - npc.x;
+        const dy = tad.y - npc.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < nearestDist && dist < 500) { // Only face if within detection range
+          nearestDist = dist;
+          nearestTarget = tad;
+        }
+      }
+      if (nearestTarget) {
+        const targetAngle = Math.atan2(nearestTarget.y - npc.y, nearestTarget.x - npc.x);
+        // Smoothly rotate toward target
+        let angleDiff = targetAngle - (npc.angle || 0);
+        // Normalize to -PI to PI
+        while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+        while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+        npc.angle = (npc.angle || 0) + angleDiff * 0.1;
+      }
     }
 
     // Apply attack lunge animation for NPCs
@@ -2411,15 +2759,22 @@ function update(deltaTime = 1) {
       const distance = Math.sqrt(dx * dx + dy * dy);
 
       if (distance < tad.radius + foodItem.radius) {
-        // Check food capacity
-        const foodCapacity = getFoodCapacity(tad);
-        const currentFood = tad.food || 0;
+        if (foodItem.type === 'nucleotide') {
+          // Nucleotides: max 1 per creature
+          const currentNucleotides = tad.nucleotides || 0;
+          if (currentNucleotides < 1) {
+            tad.nucleotides = 1;
+            socket.emit('eatFood', foodItem.id);
+          }
+        } else {
+          // Regular food: check food capacity
+          const foodCapacity = getFoodCapacity(tad);
+          const currentFood = tad.food || 0;
 
-        if (currentFood < foodCapacity) {
-          // Increase this tadpole's food counter
-          tad.food = currentFood + 1;
-          socket.emit('eatFood', foodItem.id);
-          // Server will handle spawning new food
+          if (currentFood < foodCapacity) {
+            tad.food = currentFood + 1;
+            socket.emit('eatFood', foodItem.id);
+          }
         }
       }
     }
@@ -2965,26 +3320,56 @@ function render() {
       }
     }
 
-    const drawRadius = foodItem.radius * scale;
+    const isNucleotide = foodItem.type === 'nucleotide';
+
+    // Nucleotide has a subtle pulse effect
+    let pulseScale = 1;
+    if (isNucleotide) {
+      pulseScale = 1 + Math.sin(Date.now() / 200) * 0.1;
+    }
+
+    const drawRadius = foodItem.radius * scale * pulseScale;
 
     // Spawn glow effect
     if (glowAlpha > 0) {
       ctx.beginPath();
       ctx.arc(foodItem.x, foodItem.y, drawRadius * 2.5, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(200, 255, 200, ${glowAlpha * 0.4})`;
+      const spawnGlowColor = isNucleotide
+        ? `rgba(100, 200, 255, ${glowAlpha * 0.5})`
+        : `rgba(200, 255, 200, ${glowAlpha * 0.4})`;
+      ctx.fillStyle = spawnGlowColor;
       ctx.fill();
     }
 
-    // Outer glow
+    // Outer glow - nucleotide has blue glow, food has white
     ctx.beginPath();
-    ctx.arc(foodItem.x, foodItem.y, drawRadius + 3, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    if (isNucleotide) {
+      // Larger, more prominent glow for nucleotide
+      ctx.arc(foodItem.x, foodItem.y, drawRadius + 5, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(100, 180, 255, 0.4)';
+    } else {
+      ctx.arc(foodItem.x, foodItem.y, drawRadius + 3, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    }
     ctx.fill();
 
     // Main food circle
     ctx.beginPath();
     ctx.arc(foodItem.x, foodItem.y, drawRadius, 0, Math.PI * 2);
-    ctx.fillStyle = '#FFFFFF';
+    if (isNucleotide) {
+      // Blue/cyan gradient for nucleotide
+      const gradient = ctx.createRadialGradient(
+        foodItem.x, foodItem.y, 0,
+        foodItem.x, foodItem.y, drawRadius
+      );
+      gradient.addColorStop(0, '#E0FFFF'); // Light cyan center
+      gradient.addColorStop(0.6, '#00BFFF'); // Deep sky blue
+      gradient.addColorStop(1, '#1E90FF'); // Dodger blue edge
+      ctx.fillStyle = gradient;
+    } else {
+      // White for food
+      ctx.fillStyle = '#FFFFFF';
+    }
     ctx.fill();
 
     // Cursor around food if targeting
@@ -3195,10 +3580,13 @@ function drawVignette() {
   // Use the diagonal distance to ensure vignette covers corners
   const radius = Math.sqrt(centerX * centerX + centerY * centerY);
 
-  const vignette = ctx.createRadialGradient(centerX, centerY, radius * 0.4, centerX, centerY, radius);
+  // Gradient from center to edges - start fading at 30% of radius
+  const vignette = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
   vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
-  vignette.addColorStop(0.7, 'rgba(0, 0, 0, 0)');
-  vignette.addColorStop(1, 'rgba(0, 0, 0, 0.35)');
+  vignette.addColorStop(0.3, 'rgba(0, 0, 0, 0)');
+  vignette.addColorStop(0.7, 'rgba(0, 0, 0, 0.21)');
+  vignette.addColorStop(0.9, 'rgba(0, 0, 0, 0.56)');
+  vignette.addColorStop(1, 'rgba(0, 0, 0, 0.84)');
 
   ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -3207,6 +3595,48 @@ function drawVignette() {
 function drawEntity(entity, isMe, isNPC, isSelected = false) {
   const x = entity.renderX || entity.x;
   const y = entity.renderY || entity.y;
+
+  // Spawn animation for NPCs
+  let spawnScale = 1;
+  let spawnGlowAlpha = 0;
+  const spawnDuration = 400; // 400ms spawn animation
+
+  if (entity.spawnTime && isNPC) {
+    const elapsed = Date.now() - entity.spawnTime;
+    if (elapsed < spawnDuration) {
+      const progress = elapsed / spawnDuration;
+      // Pop effect: start at 0, overshoot to 1.3, settle to 1
+      if (progress < 0.4) {
+        spawnScale = (progress / 0.4) * 1.3;
+      } else {
+        const settleProgress = (progress - 0.4) / 0.6;
+        spawnScale = 1.3 - 0.3 * settleProgress;
+      }
+      spawnGlowAlpha = (1 - progress) * 0.5;
+    } else {
+      // Animation complete, remove spawnTime
+      delete entity.spawnTime;
+    }
+  }
+
+  // Draw spawn glow effect
+  if (spawnGlowAlpha > 0) {
+    ctx.beginPath();
+    ctx.arc(x, y, entity.radius * 3 * spawnScale, 0, Math.PI * 2);
+    const glowColor = entity.type === 'cell'
+      ? `rgba(100, 150, 220, ${spawnGlowAlpha * 0.4})`
+      : `rgba(200, 100, 100, ${spawnGlowAlpha * 0.4})`;
+    ctx.fillStyle = glowColor;
+    ctx.fill();
+  }
+
+  // Apply spawn scale transform
+  if (spawnScale !== 1) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(spawnScale, spawnScale);
+    ctx.translate(-x, -y);
+  }
 
   // Only initialize tail for tadpoles
   if (entity.type === 'tadpole' && !entity.tail) {
@@ -3217,6 +3647,11 @@ function drawEntity(entity, isMe, isNPC, isSelected = false) {
     drawCell(entity, isMe, isSelected);
   } else {
     drawTadpole(entity, isMe, isNPC, isSelected);
+  }
+
+  // Restore transform if we applied spawn scale
+  if (spawnScale !== 1) {
+    ctx.restore();
   }
 
   // Draw health bar if damaged
@@ -3312,41 +3747,52 @@ function drawTadpole(entity, isMe, isNPC, isSelected) {
     ctx.translate(-x, -y);
   }
 
-  // Transformation animation (tadpole to cell)
-  let transformScale = 1;
+  // Transformation animation (tadpole to cell) - morphing effect
+  let transformProgress = 0;
   let transformGlow = 0;
   if (entity.isTransforming && entity.transformationStartTime) {
     const elapsed = Date.now() - entity.transformationStartTime;
-    const progress = Math.min(elapsed / TRANSFORMATION_DURATION, 1);
-
-    // Pulsing effect during transformation
-    const pulse = Math.sin(elapsed / 200) * 0.1;
-    transformScale = 1 + pulse;
+    transformProgress = Math.min(elapsed / TRANSFORMATION_DURATION, 1);
 
     // Growing glow that intensifies toward the end
-    transformGlow = 0.3 + progress * 0.5;
+    transformGlow = 0.3 + transformProgress * 0.5;
 
     // Draw transformation glow
     ctx.save();
     ctx.translate(x, y);
 
-    // Pulsing rings
+    // Pulsing energy rings - more intense as transformation progresses
     const ringCount = 3;
     for (let i = 0; i < ringCount; i++) {
-      const ringPhase = (elapsed / 500 + i / ringCount) % 1;
-      const ringRadius = entity.radius * (1 + ringPhase * 2);
-      const ringAlpha = (1 - ringPhase) * transformGlow * 0.5;
+      const ringPhase = (elapsed / 400 + i / ringCount) % 1;
+      const ringRadius = entity.radius * (1.2 + ringPhase * 1.5);
+      const ringAlpha = (1 - ringPhase) * transformGlow * 0.4;
 
-      ctx.strokeStyle = `rgba(100, 150, 255, ${ringAlpha})`;
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = `rgba(100, 180, 255, ${ringAlpha})`;
+      ctx.lineWidth = 2 + transformProgress * 2;
       ctx.beginPath();
       ctx.arc(0, 0, ringRadius, 0, Math.PI * 2);
       ctx.stroke();
     }
 
+    // Particle burst effect during transformation
+    const particleCount = Math.floor(8 + transformProgress * 12);
+    for (let i = 0; i < particleCount; i++) {
+      const particleAngle = (elapsed / 1000 + i * Math.PI * 2 / particleCount) % (Math.PI * 2);
+      const particleDist = entity.radius * (0.8 + Math.sin(elapsed / 200 + i) * 0.3);
+      const px = Math.cos(particleAngle) * particleDist;
+      const py = Math.sin(particleAngle) * particleDist;
+      const particleSize = 2 + transformProgress * 2;
+
+      ctx.beginPath();
+      ctx.arc(px, py, particleSize, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(150, 200, 255, ${0.3 + transformProgress * 0.4})`;
+      ctx.fill();
+    }
+
     // Inner transformation glow
     const glowGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, entity.radius * 2);
-    glowGradient.addColorStop(0, `rgba(100, 150, 255, ${transformGlow * 0.4})`);
+    glowGradient.addColorStop(0, `rgba(100, 150, 255, ${transformGlow * 0.5})`);
     glowGradient.addColorStop(0.5, `rgba(74, 95, 127, ${transformGlow * 0.3})`);
     glowGradient.addColorStop(1, 'rgba(74, 95, 127, 0)');
     ctx.fillStyle = glowGradient;
@@ -3357,8 +3803,9 @@ function drawTadpole(entity, isMe, isNPC, isSelected) {
     ctx.restore();
   }
 
-  // Draw tail
-  if (entity.tail && entity.tail.length > 1) {
+  // Draw tail (fade out during transformation)
+  const tailOpacity = entity.isTransforming ? Math.max(0, 1 - transformProgress * 2) : 1; // Tail fades in first half
+  if (entity.tail && entity.tail.length > 1 && tailOpacity > 0) {
     // Draw yellow outline first if selected (and 2+ creatures)
     if (isSelected && myTadpoles.length > 1) {
       ctx.beginPath();
@@ -3391,11 +3838,11 @@ function drawTadpole(entity, isMe, isNPC, isSelected) {
       entity.tail[0].x, entity.tail[0].y,
       entity.tail[entity.tail.length - 1].x, entity.tail[entity.tail.length - 1].y
     );
-    gradient.addColorStop(0, entity.color);
-    gradient.addColorStop(1, hexToRGBA(entity.color, 0.8));
+    gradient.addColorStop(0, hexToRGBA(entity.color, tailOpacity));
+    gradient.addColorStop(1, hexToRGBA(entity.color, 0.8 * tailOpacity));
 
     ctx.strokeStyle = gradient;
-    ctx.lineWidth = entity.radius * 1.2;
+    ctx.lineWidth = entity.radius * 1.2 * (entity.isTransforming ? (1 - transformProgress * 0.5) : 1);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.stroke();
@@ -3452,12 +3899,54 @@ function drawTadpole(entity, isMe, isNPC, isSelected) {
     ctx.rotate(-squishAngle);
   }
 
+  // Draw body - morphs from ellipse to hexagon during transformation
   ctx.beginPath();
-  ctx.ellipse(0, 0, effectiveRadius * 1.2, effectiveRadius, 0, 0, Math.PI * 2);
+  if (entity.isTransforming && transformProgress > 0) {
+    // Morph from ellipse to hexagon
+    const morphProgress = transformProgress;
+    const points = 24; // Smooth interpolation
 
-  // Enhanced color for strength upgrades
+    for (let i = 0; i <= points; i++) {
+      const angle = (i / points) * Math.PI * 2;
+
+      // Ellipse point
+      const ellipseX = Math.cos(angle) * effectiveRadius * 1.2;
+      const ellipseY = Math.sin(angle) * effectiveRadius;
+
+      // Hexagon point (find nearest hex vertex position)
+      const hexAngle = Math.round(angle / (Math.PI / 3)) * (Math.PI / 3);
+      const hexRadius = effectiveRadius * (1 + morphProgress * 0.3); // Grow slightly
+      const hexX = Math.cos(hexAngle) * hexRadius;
+      const hexY = Math.sin(hexAngle) * hexRadius;
+
+      // Interpolate between ellipse and hexagon
+      const px = ellipseX + (hexX - ellipseX) * morphProgress;
+      const py = ellipseY + (hexY - ellipseY) * morphProgress;
+
+      if (i === 0) {
+        ctx.moveTo(px, py);
+      } else {
+        ctx.lineTo(px, py);
+      }
+    }
+    ctx.closePath();
+  } else {
+    ctx.ellipse(0, 0, effectiveRadius * 1.2, effectiveRadius, 0, 0, Math.PI * 2);
+  }
+
+  // Enhanced color for strength upgrades, morph color during transformation
   let bodyColor = entity.color;
-  if (strengthLvl > 0 && isMe) {
+  if (entity.isTransforming && transformProgress > 0) {
+    // Morph from tadpole color to cell color (#4a5f7f)
+    const r1 = parseInt(entity.color.slice(1, 3), 16);
+    const g1 = parseInt(entity.color.slice(3, 5), 16);
+    const b1 = parseInt(entity.color.slice(5, 7), 16);
+    const r2 = 74, g2 = 95, b2 = 127; // Cell color
+    const r = Math.round(r1 + (r2 - r1) * transformProgress);
+    const g = Math.round(g1 + (g2 - g1) * transformProgress);
+    const b = Math.round(b1 + (b2 - b1) * transformProgress);
+    bodyColor = `rgb(${r}, ${g}, ${b})`;
+  } else if (strengthLvl > 0 && isMe) {
     // Parse hex color and boost saturation/brightness
     const r = parseInt(entity.color.slice(1, 3), 16);
     const g = parseInt(entity.color.slice(3, 5), 16);
@@ -3489,12 +3978,12 @@ function drawTadpole(entity, isMe, isNPC, isSelected) {
       const px = Math.cos(angle) * dist * 0.6 - effectiveRadius * 0.2;
       const py = Math.sin(angle) * dist * 0.5;
 
-      // Size based on food fullness
-      const particleSize = effectiveRadius * 0.08 * (0.7 + foodRatio * 0.5);
+      // Constant particle size (doesn't scale with food amount)
+      const particleSize = effectiveRadius * 0.07;
 
       ctx.beginPath();
       ctx.arc(px, py, particleSize, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(255, 255, 255, ${0.4 + foodRatio * 0.3})`;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
       ctx.fill();
     }
   }
@@ -3510,46 +3999,51 @@ function drawTadpole(entity, isMe, isNPC, isSelected) {
     ctx.stroke();
   }
 
-  // Eyes - size scales with upgrades
-  const eyeOffset = effectiveRadius * 0.4;
-  const eyeSize = effectiveRadius * (0.25 + totalLvl * 0.015); // Slightly bigger eyes at higher levels
+  // Eyes - fade out during transformation (cells don't have tadpole-style eyes)
+  const eyeOpacity = entity.isTransforming ? Math.max(0, 1 - transformProgress * 1.5) : 1;
 
-  // Level 3+: Draw eye whites first for more detailed eyes
-  if (totalLvl >= 3 && isMe) {
+  if (eyeOpacity > 0) {
+    const eyeOffset = effectiveRadius * 0.4;
+    const eyeSize = effectiveRadius * 0.25; // Fixed size, no weird scaling
+
+    // Level 3+: Draw eye whites first for more detailed eyes
+    if (totalLvl >= 3 && isMe && !entity.isTransforming) {
+      ctx.beginPath();
+      ctx.arc(eyeOffset, -eyeOffset * 0.7, eyeSize * 1.3, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 255, ${0.9 * eyeOpacity})`;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(eyeOffset, eyeOffset * 0.7, eyeSize * 1.3, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 255, ${0.9 * eyeOpacity})`;
+      ctx.fill();
+    }
+
+    // Main eye pupils
     ctx.beginPath();
-    ctx.arc(eyeOffset, -eyeOffset * 0.7, eyeSize * 1.3, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.arc(eyeOffset, -eyeOffset * 0.7, eyeSize, 0, Math.PI * 2);
+    const eyeColor = totalLvl >= 5 && isMe ? `rgba(60, 0, 120, ${0.95 * eyeOpacity})` : `rgba(0, 0, 0, ${0.8 * eyeOpacity})`;
+    ctx.fillStyle = eyeColor;
     ctx.fill();
 
     ctx.beginPath();
-    ctx.arc(eyeOffset, eyeOffset * 0.7, eyeSize * 1.3, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-    ctx.fill();
-  }
-
-  // Main eye pupils
-  ctx.beginPath();
-  ctx.arc(eyeOffset, -eyeOffset * 0.7, eyeSize, 0, Math.PI * 2);
-  ctx.fillStyle = totalLvl >= 5 && isMe ? 'rgba(60, 0, 120, 0.95)' : 'rgba(0, 0, 0, 0.8)'; // Purple eyes at max level
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.arc(eyeOffset, eyeOffset * 0.7, eyeSize, 0, Math.PI * 2);
-  ctx.fillStyle = totalLvl >= 5 && isMe ? 'rgba(60, 0, 120, 0.95)' : 'rgba(0, 0, 0, 0.8)';
-  ctx.fill();
-
-  // Level 4+: Eye shine/glint
-  if (totalLvl >= 4 && isMe) {
-    const glintSize = eyeSize * 0.35;
-    ctx.beginPath();
-    ctx.arc(eyeOffset + eyeSize * 0.3, -eyeOffset * 0.7 - eyeSize * 0.3, glintSize, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.arc(eyeOffset, eyeOffset * 0.7, eyeSize, 0, Math.PI * 2);
+    ctx.fillStyle = eyeColor;
     ctx.fill();
 
-    ctx.beginPath();
-    ctx.arc(eyeOffset + eyeSize * 0.3, eyeOffset * 0.7 - eyeSize * 0.3, glintSize, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    ctx.fill();
+    // Level 4+: Eye shine/glint
+    if (totalLvl >= 4 && isMe && !entity.isTransforming) {
+      const glintSize = eyeSize * 0.35;
+      ctx.beginPath();
+      ctx.arc(eyeOffset + eyeSize * 0.3, -eyeOffset * 0.7 - eyeSize * 0.3, glintSize, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 255, ${0.8 * eyeOpacity})`;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(eyeOffset + eyeSize * 0.3, eyeOffset * 0.7 - eyeSize * 0.3, glintSize, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 255, ${0.8 * eyeOpacity})`;
+      ctx.fill();
+    }
   }
 
   ctx.restore();
@@ -3820,12 +4314,12 @@ function drawCell(entity, isMe, isSelected) {
       const px = Math.cos(angle) * dist * 0.7;
       const py = Math.sin(angle) * dist * 0.7;
 
-      // Size based on food fullness
-      const particleSize = entity.radius * 0.06 * (0.7 + foodRatio * 0.5);
+      // Constant particle size (doesn't scale with food amount)
+      const particleSize = entity.radius * 0.05;
 
       ctx.beginPath();
       ctx.arc(px, py, particleSize, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(255, 255, 255, ${0.35 + foodRatio * 0.25})`;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
       ctx.fill();
     }
   }
@@ -4212,6 +4706,7 @@ function gameLoop() {
 
   render();
   updateStatsDisplay();
+  updateTutorialProgress();
   requestAnimationFrame(gameLoop);
 }
 

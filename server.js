@@ -37,12 +37,12 @@ const ARRIVAL_THRESHOLD = 30;
 const NPC_TADPOLE_RADIUS = 11.2;
 const NPC_CELL_RADIUS = 40;
 const NPC_TADPOLE_HEALTH = 80; // NPCs tankier than players
-const NPC_CELL_HEALTH = 200;
+const NPC_CELL_HEALTH = 80; // 40% of original 200
 const NPC_MAX_HEALTH = 100;
 const NPC_HEALTH_REGEN_RATE = 0.015;
 const ATTACK_DAMAGE = 14; // Player base damage (weak at start)
 const NPC_TADPOLE_DAMAGE = 20; // NPCs hit harder than players
-const NPC_CELL_DAMAGE = 30;
+const NPC_CELL_DAMAGE = 20; // Competitive with facing behavior
 const ATTACK_RANGE = 80;
 const NPC_ATTACK_COOLDOWN = 700;
 const CELL_DAMAGE_RESISTANCE = 0.6;
@@ -250,8 +250,49 @@ function updateNPC(npc) {
     npc.isSprinting = false;
   }
 
-  // Wander if not chasing
-  if (!isChasing && npc.moveTarget) {
+  // NPC cells seek and collect food when not chasing players
+  let isSeekingFood = false;
+  if (!isChasing && npc.type === 'cell') {
+    // Find nearest food within detection range
+    const FOOD_DETECTION_RANGE = 250;
+    let nearestFood = null;
+    let nearestFoodDist = Infinity;
+
+    for (let foodId in food) {
+      const foodItem = food[foodId];
+      const dx = foodItem.x - npc.x;
+      const dy = foodItem.y - npc.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < FOOD_DETECTION_RANGE && dist < nearestFoodDist) {
+        nearestFood = foodItem;
+        nearestFoodDist = dist;
+      }
+    }
+
+    if (nearestFood) {
+      isSeekingFood = true;
+
+      // Check if close enough to eat
+      const eatRange = npc.radius + nearestFood.radius;
+      if (nearestFoodDist < eatRange) {
+        // Eat the food
+        io.emit('foodEaten', { foodId: nearestFood.id });
+        delete food[nearestFood.id];
+        // Cells don't need the food value, they just collect it
+      } else {
+        // Move towards food
+        const dx = nearestFood.x - npc.x;
+        const dy = nearestFood.y - npc.y;
+        const moveSpeed = NPC_MOVE_SPEED * 0.5; // Moderate speed when seeking food
+        npc.vx += (dx / nearestFoodDist) * moveSpeed;
+        npc.vy += (dy / nearestFoodDist) * moveSpeed;
+      }
+    }
+  }
+
+  // Wander if not chasing and not seeking food
+  if (!isChasing && !isSeekingFood && npc.moveTarget) {
     const dx = npc.moveTarget.x - npc.x;
     const dy = npc.moveTarget.y - npc.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
@@ -385,13 +426,34 @@ function handleNPCDeath(npc) {
   const deathY = npc.y;
   const wasCell = npc.type === 'cell';
 
-  // Spawn death food (random amount)
-  const foodCount = wasCell
-    ? 4 + Math.floor(Math.random() * 3)   // Cells: 4-6
-    : 2 + Math.floor(Math.random() * 4);  // Tadpoles: 2-5
-  for (let i = 0; i < foodCount; i++) {
+  // Cells drop 1 rare Essence + 3-5 Plankton
+  // Tadpoles drop only 2-5 Plankton
+  const planktonCount = wasCell
+    ? 3 + Math.floor(Math.random() * 3)   // Cells: 3-5 plankton
+    : 2 + Math.floor(Math.random() * 4);  // Tadpoles: 2-5 plankton
+
+  // Spawn nucleotide first (only from cells)
+  if (wasCell) {
+    const nucleotideId = `food_${foodIdCounter++}`;
+    const nucleotideAngle = Math.random() * Math.PI * 2;
+    const nucleotideDist = 15 + Math.random() * 10;
+
+    food[nucleotideId] = {
+      id: nucleotideId,
+      x: deathX + Math.cos(nucleotideAngle) * nucleotideDist,
+      y: deathY + Math.sin(nucleotideAngle) * nucleotideDist,
+      radius: 6, // Slightly larger than food
+      type: 'nucleotide', // Rare currency from cells, needed for evolution
+      spawnTime: Date.now(),
+      ttl: 90000 + Math.random() * 90000 // 90-180 seconds lifespan (longer)
+    };
+    io.emit('foodSpawned', food[nucleotideId]);
+  }
+
+  // Spawn plankton
+  for (let i = 0; i < planktonCount; i++) {
     const id = `food_${foodIdCounter++}`;
-    const angle = (Math.PI * 2 / foodCount) * i;
+    const angle = (Math.PI * 2 / planktonCount) * i + (wasCell ? 0.5 : 0);
     const dist = 20 + Math.random() * 20;
     const baseRadius = 4;
     const sizeVariation = 0.75 + Math.random() * 0.5;
@@ -401,6 +463,7 @@ function handleNPCDeath(npc) {
       x: deathX + Math.cos(angle) * dist,
       y: deathY + Math.sin(angle) * dist,
       radius: baseRadius * sizeVariation,
+      type: 'plankton',
       spawnTime: Date.now(),
       ttl: 30000 + Math.random() * 60000 // 30-90 seconds lifespan
     };
@@ -629,6 +692,7 @@ setInterval(() => {
       x: center.x + Math.cos(angle) * dist,
       y: center.y + Math.sin(angle) * dist,
       radius: baseRadius * sizeVariation,
+      type: 'plankton', // Natural spawning food
       spawnTime: now,
       ttl: FOOD_BASE_TTL + Math.random() * FOOD_TTL_VARIANCE
     };
@@ -662,6 +726,7 @@ function generateFood(count) {
       x,
       y,
       radius,
+      type: 'plankton', // Natural spawning food
       spawnTime: Date.now(),
       ttl: 30000 + Math.random() * 60000
     };
@@ -710,11 +775,38 @@ io.on('connection', (socket) => {
     return '#FFFFFF';
   };
 
+  // Find safe spawn position away from cells
+  let spawnX, spawnY;
+  let attempts = 0;
+  const maxAttempts = 50;
+  const MIN_DIST_FROM_CELLS = 400;
+
+  do {
+    spawnX = (Math.random() - 0.5) * 3000;
+    spawnY = (Math.random() - 0.5) * 3000;
+    attempts++;
+
+    // Check distance from all NPC cells
+    let tooClose = false;
+    for (let npcId in npcs) {
+      const npc = npcs[npcId];
+      if (npc.type === 'cell') {
+        const dx = spawnX - npc.x;
+        const dy = spawnY - npc.y;
+        if (Math.sqrt(dx * dx + dy * dy) < MIN_DIST_FROM_CELLS) {
+          tooClose = true;
+          break;
+        }
+      }
+    }
+    if (!tooClose) break;
+  } while (attempts < maxAttempts);
+
   // Initialize player
   players[socket.id] = {
     id: socket.id,
-    x: (Math.random() - 0.5) * 3000, // Random spawn across the world
-    y: (Math.random() - 0.5) * 3000,
+    x: spawnX,
+    y: spawnY,
     vx: 0,
     vy: 0,
     color: randomColor(),

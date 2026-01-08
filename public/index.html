@@ -31,11 +31,21 @@
     <div>Health: <span id="healthStat">100</span></div>
     <div>Strength: <span id="strengthStat">50</span></div>
     <div>Food: <span id="foodStat">0</span>/<span id="foodCapacityStat">10</span></div>
+    <div id="nucleotideRow" class="nucleotide-stat hidden">Nucleotides: <span id="nucleotideStat">0</span>/1</div>
   </div>
 
   <div id="deathScreen" class="death-screen hidden">
     <h1>You Died</h1>
     <button id="restartBtn">Restart</button>
+  </div>
+
+  <!-- Tutorial Tooltips -->
+  <div id="tutorialTooltip" class="tutorial-tooltip hidden">
+    <div class="tooltip-content">
+      <p id="tooltipText"></p>
+      <button id="tooltipDismiss" class="tooltip-dismiss" style="display: none;">Got it!</button>
+    </div>
+    <div class="tooltip-arrow"></div>
   </div>
 
   <!-- Upgrade Menu - Tabbed Technology/Evolution -->
@@ -71,6 +81,7 @@
                   <div class="tech-node-inner">
                     <div class="tech-icon">⬡</div>
                     <div class="tech-name">Membrane</div>
+                    <div class="tech-desc">Basic protection layer</div>
                     <div class="tech-effect">+20 health</div>
                     <div class="tech-cost"><span id="membraneCost">5</span> food</div>
                   </div>
@@ -86,6 +97,7 @@
                       <div class="tech-node-inner">
                         <div class="tech-icon">⬢</div>
                         <div class="tech-name">Cytoplasm</div>
+                        <div class="tech-desc">Internal fluid matrix</div>
                         <div class="tech-effect">+20 health</div>
                         <div class="tech-cost"><span id="cytoplasmCost">8</span> food</div>
                       </div>
@@ -97,6 +109,7 @@
                       <div class="tech-node-inner">
                         <div class="tech-icon">⬣</div>
                         <div class="tech-name">Nucleus</div>
+                        <div class="tech-desc">Genetic control center</div>
                         <div class="tech-effect">+20 health</div>
                         <div class="tech-cost"><span id="nucleusCost">12</span> food</div>
                       </div>
@@ -109,6 +122,7 @@
                       <div class="tech-node-inner">
                         <div class="tech-icon">◯</div>
                         <div class="tech-name">Vacuole</div>
+                        <div class="tech-desc">Storage compartment</div>
                         <div class="tech-effect">+7 capacity</div>
                         <div class="tech-cost"><span id="vacuoleCost">3</span> food</div>
                       </div>
@@ -120,6 +134,7 @@
                       <div class="tech-node-inner">
                         <div class="tech-icon">◎</div>
                         <div class="tech-name">Lysosome</div>
+                        <div class="tech-desc">Digestive organelle</div>
                         <div class="tech-effect">+7 capacity</div>
                         <div class="tech-cost"><span id="lysosomeCost">5</span> food</div>
                       </div>
@@ -131,6 +146,7 @@
                       <div class="tech-node-inner">
                         <div class="tech-icon">●</div>
                         <div class="tech-name">Vesicle</div>
+                        <div class="tech-desc">Transport bubble</div>
                         <div class="tech-effect">+6 capacity</div>
                         <div class="tech-cost"><span id="vesicleCost">8</span> food</div>
                       </div>
@@ -147,6 +163,7 @@
                   <div class="tech-node-inner">
                     <div class="tech-icon">⚡</div>
                     <div class="tech-name">Flagellum</div>
+                    <div class="tech-desc">Whip-like propeller</div>
                     <div class="tech-effect">+10 damage</div>
                     <div class="tech-cost"><span id="flagellumCost">5</span> food</div>
                   </div>
@@ -158,6 +175,7 @@
                   <div class="tech-node-inner">
                     <div class="tech-icon">⚔</div>
                     <div class="tech-name">Pseudopod</div>
+                    <div class="tech-desc">Extending false foot</div>
                     <div class="tech-effect">+10 damage</div>
                     <div class="tech-cost"><span id="pseudopodCost">8</span> food</div>
                   </div>
@@ -169,6 +187,7 @@
                   <div class="tech-node-inner">
                     <div class="tech-icon">⚒</div>
                     <div class="tech-name">Cytoskeleton</div>
+                    <div class="tech-desc">Internal framework</div>
                     <div class="tech-effect">+10 damage</div>
                     <div class="tech-cost"><span id="cytoskeletonCost">12</span> food</div>
                   </div>
@@ -198,6 +217,7 @@
                   <div class="tech-node-inner">
                     <div class="tech-icon">🛡</div>
                     <div class="tech-name">Cell Wall</div>
+                    <div class="tech-desc">Rigid outer barrier</div>
                     <div class="tech-effect">+30 health</div>
                     <div class="tech-cost"><span id="cellWallCost">8</span> food</div>
                   </div>
@@ -213,6 +233,7 @@
                       <div class="tech-node-inner">
                         <div class="tech-icon">🔄</div>
                         <div class="tech-name">ER Network</div>
+                        <div class="tech-desc">Protein factory</div>
                         <div class="tech-effect">+30 HP, +regen</div>
                         <div class="tech-cost"><span id="cellERCost">12</span> food</div>
                       </div>
@@ -224,6 +245,7 @@
                       <div class="tech-node-inner">
                         <div class="tech-icon">📦</div>
                         <div class="tech-name">Golgi Body</div>
+                        <div class="tech-desc">Packaging center</div>
                         <div class="tech-effect">+30 HP, ++regen</div>
                         <div class="tech-cost"><span id="cellGolgiCost">18</span> food</div>
                       </div>
@@ -236,6 +258,7 @@
                       <div class="tech-node-inner">
                         <div class="tech-icon">💧</div>
                         <div class="tech-name">Vacuoles</div>
+                        <div class="tech-desc">Fluid storage sacs</div>
                         <div class="tech-effect">+15 capacity</div>
                         <div class="tech-cost"><span id="cellStorageCost">6</span> food</div>
                       </div>
@@ -247,6 +270,7 @@
                       <div class="tech-node-inner">
                         <div class="tech-icon">🫧</div>
                         <div class="tech-name">Lipid Drops</div>
+                        <div class="tech-desc">Fat energy reserves</div>
                         <div class="tech-effect">+15 capacity</div>
                         <div class="tech-cost"><span id="cellLipidCost">10</span> food</div>
                       </div>
@@ -258,6 +282,7 @@
                       <div class="tech-node-inner">
                         <div class="tech-icon">🔋</div>
                         <div class="tech-name">Glycogen</div>
+                        <div class="tech-desc">Sugar stockpile</div>
                         <div class="tech-effect">+20 capacity</div>
                         <div class="tech-cost"><span id="cellGlycogenCost">15</span> food</div>
                       </div>
@@ -274,6 +299,7 @@
                   <div class="tech-node-inner">
                     <div class="tech-icon">〰</div>
                     <div class="tech-name">Cilia</div>
+                    <div class="tech-desc">Hair-like paddles</div>
                     <div class="tech-effect">+15% speed</div>
                     <div class="tech-cost"><span id="cellCiliaCost">6</span> food</div>
                   </div>
@@ -285,6 +311,7 @@
                   <div class="tech-node-inner">
                     <div class="tech-icon">🦠</div>
                     <div class="tech-name">Motor Tail</div>
+                    <div class="tech-desc">Powered flagellum</div>
                     <div class="tech-effect">+25% speed, tail</div>
                     <div class="tech-cost"><span id="cellMotorCost">12</span> food</div>
                   </div>
@@ -296,6 +323,7 @@
                   <div class="tech-node-inner">
                     <div class="tech-icon">💨</div>
                     <div class="tech-name">Jet Propel</div>
+                    <div class="tech-desc">Water jet system</div>
                     <div class="tech-effect">+40% speed</div>
                     <div class="tech-cost"><span id="cellJetCost">18</span> food</div>
                   </div>
@@ -310,6 +338,7 @@
                   <div class="tech-node-inner">
                     <div class="tech-icon">🧪</div>
                     <div class="tech-name">Enzymes</div>
+                    <div class="tech-desc">Digestive chemicals</div>
                     <div class="tech-effect">+15 damage</div>
                     <div class="tech-cost"><span id="cellEnzymesCost">8</span> food</div>
                   </div>
@@ -321,6 +350,7 @@
                   <div class="tech-node-inner">
                     <div class="tech-icon">☠</div>
                     <div class="tech-name">Toxins</div>
+                    <div class="tech-desc">Poison secretion</div>
                     <div class="tech-effect">+15 damage</div>
                     <div class="tech-cost"><span id="cellToxinCost">12</span> food</div>
                   </div>
@@ -332,6 +362,7 @@
                   <div class="tech-node-inner">
                     <div class="tech-icon">🦷</div>
                     <div class="tech-name">Predator</div>
+                    <div class="tech-desc">Hunting appendage</div>
                     <div class="tech-effect">+20 damage</div>
                     <div class="tech-cost"><span id="cellPredatorCost">18</span> food</div>
                   </div>
@@ -359,7 +390,7 @@
                   <span>• Can support allies</span>
                 </div>
                 <div class="evolution-requires">Requires: Nucleus</div>
-                <div class="evolution-cost"><span id="mitosisCost">20</span> food</div>
+                <div class="evolution-cost"><span id="mitosisCost">20</span> food + 1 nucleotide</div>
               </div>
             </div>
           </div>

@@ -224,6 +224,15 @@ body {
   margin: 3px 0;
 }
 
+.nucleotide-stat {
+  color: #00BFFF;
+  font-weight: bold;
+}
+
+.nucleotide-stat span {
+  color: #E0FFFF;
+}
+
 .death-screen {
   position: fixed;
   top: 0;
@@ -266,6 +275,87 @@ body {
   transform: scale(1.05);
 }
 
+/* Tutorial Tooltips */
+.tutorial-tooltip {
+  position: fixed;
+  z-index: 1500;
+  pointer-events: auto;
+  animation: tooltipFadeIn 0.4s ease-out;
+}
+
+.tutorial-tooltip.hidden {
+  display: none;
+}
+
+@keyframes tooltipFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tooltip-content {
+  background: linear-gradient(135deg, rgba(30, 60, 90, 0.95) 0%, rgba(20, 40, 60, 0.95) 100%);
+  border: 2px solid rgba(100, 180, 255, 0.6);
+  border-radius: 12px;
+  padding: clamp(12px, 3vw, 20px) clamp(14px, 3vw, 24px);
+  max-width: min(280px, 80vw);
+  min-width: min(200px, 70vw);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 30px rgba(100, 180, 255, 0.2);
+}
+
+.tooltip-content p {
+  color: #e0f0ff;
+  font-size: clamp(12px, 2.5vw, 15px);
+  line-height: 1.4;
+  margin: 0;
+  text-align: center;
+}
+
+.tooltip-dismiss {
+  display: block;
+  width: 100%;
+  padding: 8px 16px;
+  background: linear-gradient(135deg, rgba(60, 120, 180, 0.8) 0%, rgba(40, 80, 140, 0.8) 100%);
+  border: 1px solid rgba(100, 180, 255, 0.5);
+  border-radius: 6px;
+  color: white;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tooltip-dismiss:hover {
+  background: linear-gradient(135deg, rgba(80, 140, 200, 0.9) 0%, rgba(60, 100, 160, 0.9) 100%);
+  border-color: rgba(140, 200, 255, 0.8);
+  transform: scale(1.02);
+}
+
+.tooltip-arrow {
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-left: 10px solid transparent;
+  border-right: 10px solid transparent;
+  border-top: 10px solid rgba(100, 180, 255, 0.6);
+}
+
+.tooltip-arrow::after {
+  content: '';
+  position: absolute;
+  top: -12px;
+  left: -8px;
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 8px solid rgba(30, 60, 90, 0.95);
+}
+
 /* Upgrade Menu */
 .upgrade-menu {
   position: fixed;
@@ -297,11 +387,12 @@ body {
 }
 
 .upgrade-close-btn {
-  position: absolute;
-  top: 20px;
-  right: 20px;
+  position: fixed;
+  top: calc(10vh + 20px);
+  right: calc(5% + 20px);
   width: 40px;
   height: 40px;
+  z-index: 3001;
   background: rgba(255, 255, 255, 0.1);
   border: 2px solid rgba(255, 255, 255, 0.3);
   border-radius: 50%;
@@ -487,7 +578,7 @@ body {
   position: absolute;
   left: 50%;
   top: 0;
-  width: 240px;
+  width: 355px; /* 235px branch + 120px gap = 355px center-to-center */
   height: 2px;
   background: rgba(100, 200, 150, 0.5);
   transform: translateX(-50%);
@@ -525,6 +616,7 @@ body {
   flex-direction: column;
   align-items: center;
   position: relative;
+  width: 235px; /* Fixed width to accommodate sub-branches */
 }
 
 .branch-line {
@@ -533,10 +625,11 @@ body {
 
 .branch-connector {
   width: 2px;
-  height: 12px;
+  height: 10px;
   background: rgba(100, 200, 150, 0.5);
   flex-shrink: 0;
-  margin: 3px 0;
+  margin: 0 auto;
+  align-self: center;
 }
 
 /* Sub-branches (for capacity branching from health) */
@@ -635,6 +728,7 @@ body {
 
 .tech-node.locked .tech-icon,
 .tech-node.locked .tech-name,
+.tech-node.locked .tech-desc,
 .tech-node.locked .tech-effect {
   opacity: 0.35;
 }
@@ -654,6 +748,7 @@ body {
 
 .tech-node.unaffordable .tech-icon,
 .tech-node.unaffordable .tech-name,
+.tech-node.unaffordable .tech-desc,
 .tech-node.unaffordable .tech-effect {
   opacity: 0.7;
 }
@@ -673,6 +768,32 @@ body {
   color: #aaffcc;
 }
 
+/* Fog of war - nodes 2+ beyond currently unlocked */
+.tech-node.fog .tech-node-inner {
+  background: linear-gradient(135deg, rgba(20, 20, 25, 0.95) 0%, rgba(10, 10, 15, 0.95) 100%);
+  border-color: rgba(40, 40, 50, 0.3);
+  filter: blur(2px);
+}
+
+.tech-node.fog .tech-icon,
+.tech-node.fog .tech-name,
+.tech-node.fog .tech-desc,
+.tech-node.fog .tech-effect,
+.tech-node.fog .tech-cost {
+  opacity: 0.15;
+}
+
+.tech-node.fog:hover .tech-node-inner {
+  filter: blur(1px);
+  transform: none;
+  box-shadow: none;
+}
+
+.tech-node.fog {
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 /* Tech Node Elements */
 .tech-icon {
   font-size: 22px;
@@ -684,7 +805,15 @@ body {
   color: white;
   font-size: 11px;
   font-weight: bold;
+  margin-bottom: 2px;
+}
+
+.tech-desc {
+  color: rgba(200, 200, 220, 0.7);
+  font-size: 9px;
+  font-style: italic;
   margin-bottom: 3px;
+  line-height: 1.2;
 }
 
 .tech-effect {
@@ -824,11 +953,16 @@ body {
 
 /* Cell Tech Tree - 3 branch layout */
 .cell-connector {
-  width: 360px; /* Wider to span 3 branches */
+  width: 600px; /* 220px branch + 80px gap + 220px branch + 80px gap = 600px center-to-center */
 }
 
 .cell-branches {
   gap: 80px; /* Tighter gap for 3 branches */
+}
+
+/* All cell branches same width for symmetric centering */
+.cell-branches .branch {
+  width: 220px;
 }
 
 /* Cell tech node styling - blue theme */
@@ -912,4 +1046,195 @@ body {
 .offense-branch .tech-node.researched .tech-node-inner {
   background: linear-gradient(135deg, rgba(130, 90, 60, 0.95) 0%, rgba(100, 70, 45, 0.95) 100%);
   border-color: rgba(255, 200, 150, 0.8);
+}
+
+/* Responsive Tech Tree Styling */
+@media (max-width: 900px) {
+  .tech-node {
+    width: 95px;
+  }
+
+  .tech-icon {
+    font-size: 18px;
+    margin-bottom: 3px;
+  }
+
+  .tech-name {
+    font-size: 10px;
+  }
+
+  .tech-desc {
+    font-size: 8px;
+  }
+
+  .tech-effect {
+    font-size: 9px;
+  }
+
+  .tech-cost {
+    font-size: 9px;
+  }
+
+  .branch {
+    width: 200px;
+  }
+
+  .tree-branches {
+    gap: 80px;
+  }
+
+  .root-connector {
+    width: 280px;
+  }
+
+  .sub-branches {
+    gap: 10px;
+  }
+
+  .cell-connector {
+    width: 460px;
+  }
+
+  .cell-branches {
+    gap: 50px;
+  }
+
+  .cell-branches .branch {
+    width: 180px;
+  }
+}
+
+@media (max-width: 700px) {
+  .tech-node {
+    width: 80px;
+  }
+
+  .tech-node-inner {
+    padding: 8px 5px;
+  }
+
+  .tech-icon {
+    font-size: 16px;
+    margin-bottom: 2px;
+  }
+
+  .tech-name {
+    font-size: 9px;
+    margin-bottom: 1px;
+  }
+
+  .tech-desc {
+    font-size: 7px;
+    display: none; /* Hide descriptions on small screens */
+  }
+
+  .tech-effect {
+    font-size: 8px;
+    margin-bottom: 2px;
+  }
+
+  .tech-cost {
+    font-size: 8px;
+  }
+
+  .branch {
+    width: 165px;
+  }
+
+  .tree-branches {
+    gap: 50px;
+  }
+
+  .root-connector {
+    width: 215px;
+  }
+
+  .sub-branches {
+    gap: 5px;
+  }
+
+  .cell-connector {
+    width: 360px;
+  }
+
+  .cell-branches {
+    gap: 30px;
+  }
+
+  .cell-branches .branch {
+    width: 150px;
+  }
+
+  .upgrade-container {
+    padding: 25px;
+  }
+
+  .upgrade-close-btn {
+    top: calc(10vh + 15px);
+    right: calc(5% + 15px);
+    width: 35px;
+    height: 35px;
+    font-size: 22px;
+  }
+}
+
+@media (max-width: 500px) {
+  .tech-node {
+    width: 65px;
+  }
+
+  .tech-node-inner {
+    padding: 6px 4px;
+    border-radius: 6px;
+  }
+
+  .tech-icon {
+    font-size: 14px;
+  }
+
+  .tech-name {
+    font-size: 8px;
+  }
+
+  .tech-effect {
+    font-size: 7px;
+  }
+
+  .tech-cost {
+    font-size: 7px;
+  }
+
+  .branch {
+    width: 135px;
+  }
+
+  .tree-branches {
+    gap: 30px;
+  }
+
+  .root-connector {
+    width: 165px;
+  }
+
+  .branch-connector {
+    height: 8px;
+  }
+
+  .cell-connector {
+    width: 290px;
+  }
+
+  .cell-branches {
+    gap: 20px;
+  }
+
+  .cell-branches .branch {
+    width: 125px;
+  }
+
+  .upgrade-container {
+    width: 95%;
+    height: 85%;
+    padding: 15px;
+  }
 }
