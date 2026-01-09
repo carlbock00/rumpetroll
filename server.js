@@ -3,6 +3,8 @@ const http = require('http');
 const socketIO = require('socket.io');
 const fs = require('fs').promises;
 const path = require('path');
+const session = require('express-session');
+const crypto = require('crypto');
 
 const app = express();
 const server = http.createServer(app);
@@ -15,6 +17,31 @@ const io = socketIO(server, {
 
 const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, 'players.json');
+
+// Generate a secure session secret (or use environment variable)
+const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+
+// Session middleware
+const sessionMiddleware = session({
+  secret: SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
+    httpOnly: true,
+    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+  }
+});
+
+// JSON body parser
+app.use(express.json());
+
+// Apply session middleware
+app.use(sessionMiddleware);
+
+// Auth routes
+const authRoutes = require('./auth');
+app.use('/api/auth', authRoutes);
 
 // Serve static files
 app.use(express.static('public'));
@@ -211,8 +238,8 @@ function updateNPC(npc) {
         npc.vy += Math.sin(chaseAngle) * chaseSpeed;
       }
 
-      // Attack when in range
-      if (dist < ATTACK_RANGE && now - npc.lastAttack > NPC_ATTACK_COOLDOWN) {
+      // Attack when in range (skip if player has bubble shield active)
+      if (dist < ATTACK_RANGE && now - npc.lastAttack > NPC_ATTACK_COOLDOWN && !player.bubbleShieldActive) {
         const baseDamage = npc.type === 'cell' ? NPC_CELL_DAMAGE : NPC_TADPOLE_DAMAGE;
         const actualDamage = baseDamage * (playerType === 'cell' ? CELL_DAMAGE_RESISTANCE : 1);
 
@@ -891,6 +918,17 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Handle chat messages
+  socket.on('chat', (data) => {
+    if (data && data.name && data.message) {
+      // Sanitize and limit message length
+      const sanitizedName = String(data.name).substring(0, 20);
+      const sanitizedMessage = String(data.message).substring(0, 100);
+      // Broadcast to all other players
+      socket.broadcast.emit('chat', { name: sanitizedName, message: sanitizedMessage });
+    }
+  });
+
   // Handle food eating
   socket.on('eatFood', (foodId) => {
     if (food[foodId] && players[socket.id]) {
@@ -1047,6 +1085,14 @@ io.on('connection', (socket) => {
       players[socket.id].isInactive = false;
       players[socket.id].inactiveTime = null;
       console.log(`Player ${socket.id} is now active again (tab visible)`);
+    }
+  });
+
+  // Handle bubble shield state for Protector cells
+  socket.on('bubbleShield', (data) => {
+    const player = players[socket.id];
+    if (player) {
+      player.bubbleShieldActive = data.active;
     }
   });
 

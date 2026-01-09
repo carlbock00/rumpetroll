@@ -2,12 +2,14 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const statusEl = document.getElementById('status');
-const nameInput = document.getElementById('nameInput');
+const chatInput = document.getElementById('chatInput');
+const chatDisplay = document.getElementById('chatDisplay');
 const selectionMenu = document.getElementById('selectionMenu');
 const deathScreen = document.getElementById('deathScreen');
 const upgradeBtn = document.getElementById('upgradeBtn');
 const supportBtn = document.getElementById('supportBtn');
 const hibernateBtn = document.getElementById('hibernateBtn');
+const shieldBtn = document.getElementById('shieldBtn');
 const restartBtn = document.getElementById('restartBtn');
 const healthStat = document.getElementById('healthStat');
 const strengthStat = document.getElementById('strengthStat');
@@ -29,6 +31,328 @@ const healthUpgradeCostEl = document.getElementById('healthUpgradeCost');
 const strengthUpgradeCostEl = document.getElementById('strengthUpgradeCost');
 const capacityUpgradeCostEl = document.getElementById('capacityUpgradeCost');
 const buyCapacityBtn = document.getElementById('buyCapacityBtn');
+
+// ===== Authentication System =====
+const loginModal = document.getElementById('loginModal');
+const loginBtn = document.getElementById('loginBtn');
+const loginCloseBtn = document.getElementById('loginCloseBtn');
+const userStatus = document.getElementById('userStatus');
+const tabLogin = document.getElementById('tabLogin');
+const tabRegister = document.getElementById('tabRegister');
+const loginForm = document.getElementById('loginForm');
+const registerForm = document.getElementById('registerForm');
+const loginError = document.getElementById('loginError');
+const registerError = document.getElementById('registerError');
+
+let currentUser = null;
+let lastSaveTime = 0;
+const SAVE_INTERVAL = 30000; // Save every 30 seconds
+
+// Check session on load
+async function checkSession() {
+  try {
+    const response = await fetch('/api/auth/session');
+    const data = await response.json();
+    if (data.loggedIn) {
+      currentUser = data.user;
+      updateUserUI();
+      if (data.progress?.creature_data) {
+        loadProgressFromServer(data.progress);
+      }
+    }
+  } catch (error) {
+    console.error('Session check failed:', error);
+  }
+}
+
+// Update UI based on login state
+function updateUserUI() {
+  if (currentUser) {
+    userStatus.innerHTML = `
+      <div class="user-info">
+        <span class="username">${currentUser.username}</span>
+        <button class="logout-btn" id="logoutBtn">Logout</button>
+      </div>
+    `;
+    document.getElementById('logoutBtn').addEventListener('click', logout);
+    // Update all creatures to use the username
+    if (typeof myTadpoles !== 'undefined') {
+      myTadpoles.forEach(tad => {
+        tad.name = currentUser.username;
+      });
+    }
+    // Emit to server
+    if (typeof socket !== 'undefined' && socket.connected) {
+      socket.emit('setName', currentUser.username);
+    }
+  } else {
+    userStatus.innerHTML = '<button id="loginBtn" class="auth-btn">Login</button>';
+    document.getElementById('loginBtn').addEventListener('click', () => {
+      loginModal.classList.remove('hidden');
+    });
+  }
+}
+
+// Login
+async function login(email, password) {
+  try {
+    loginError.textContent = '';
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const data = await response.json();
+    if (data.success) {
+      currentUser = data.user;
+      loginModal.classList.add('hidden');
+      updateUserUI();
+      if (data.progress?.creature_data) {
+        loadProgressFromServer(data.progress);
+      }
+      showSaveIndicator('Logged in!');
+    } else {
+      loginError.textContent = data.error || 'Login failed';
+    }
+  } catch (error) {
+    console.error('Login error:', error);
+    loginError.textContent = 'Connection error. Please try again.';
+  }
+}
+
+// Register
+async function register(username, email, password) {
+  try {
+    registerError.textContent = '';
+    const response = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, email, password })
+    });
+    const data = await response.json();
+    if (data.success) {
+      currentUser = data.user;
+      loginModal.classList.add('hidden');
+      updateUserUI();
+      showSaveIndicator('Account created!');
+    } else {
+      registerError.textContent = data.error || 'Registration failed';
+    }
+  } catch (error) {
+    console.error('Register error:', error);
+    registerError.textContent = 'Connection error. Please try again.';
+  }
+}
+
+// Logout
+async function logout() {
+  try {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    currentUser = null;
+    // Reload the page to start fresh as an anonymous player
+    window.location.reload();
+  } catch (error) {
+    console.error('Logout error:', error);
+  }
+}
+
+// Save progress to server
+async function saveProgressToServer() {
+  if (!currentUser) return;
+
+  const now = Date.now();
+  if (now - lastSaveTime < SAVE_INTERVAL) return; // Rate limit saves
+  lastSaveTime = now;
+
+  try {
+    // Prepare creature data
+    const creatures = myTadpoles.map(tad => ({
+      type: tad.type,
+      name: tad.name,
+      health: tad.health,
+      food: tad.food,
+      nucleotides: tad.nucleotides || 0,
+      // Tadpole upgrades
+      healthLevel: tad.healthLevel || 0,
+      strengthLevel: tad.strengthLevel || 0,
+      capacityLevel: tad.capacityLevel || 0,
+      maxHealthBonus: tad.maxHealthBonus || 0,
+      strengthBonus: tad.strengthBonus || 0,
+      // Cell upgrades
+      cellHealthLevel: tad.cellHealthLevel || 0,
+      cellStrengthLevel: tad.cellStrengthLevel || 0,
+      cellCapacityLevel: tad.cellCapacityLevel || 0,
+      cellSpeedLevel: tad.cellSpeedLevel || 0,
+      hasCellTail: tad.hasCellTail || false,
+      hasProtector: tad.hasProtector || false,
+      hasSword: tad.hasSword || false
+    }));
+
+    // Calculate highest evolution
+    let highestEvolution = 'tadpole';
+    for (const c of creatures) {
+      if (c.type === 'cell') {
+        highestEvolution = 'cell';
+        break;
+      }
+    }
+
+    await fetch('/api/auth/save-progress', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        creatures,
+        stats: {
+          totalFoodCollected: totalFoodCollected || 0,
+          totalKills: totalKills || 0,
+          totalDeaths: totalDeaths || 0,
+          highestEvolution
+        }
+      })
+    });
+    showSaveIndicator('Progress saved');
+  } catch (error) {
+    console.error('Save progress error:', error);
+  }
+}
+
+// Load progress from server
+function loadProgressFromServer(progress) {
+  if (!progress || !progress.creature_data || progress.creature_data.length === 0) return;
+
+  // Ask user if they want to load saved progress
+  const loadSaved = confirm('Found saved progress. Load your previous creatures?');
+  if (!loadSaved) return;
+
+  // Clear current creatures
+  myTadpoles = [];
+  selectedTadpoles.clear();
+
+  // Recreate creatures from saved data
+  progress.creature_data.forEach((savedTad, index) => {
+    const tad = {
+      id: `saved_${Date.now()}_${index}`,
+      x: (Math.random() - 0.5) * 500,
+      y: (Math.random() - 0.5) * 500,
+      vx: 0,
+      vy: 0,
+      color: savedTad.type === 'cell' ? '#4a5f7f' : '#FFFFFF',
+      radius: savedTad.type === 'cell' ? CELL_RADIUS : TADPOLE_RADIUS,
+      name: savedTad.name || currentUser.username,
+      type: savedTad.type || 'tadpole',
+      health: savedTad.health || (savedTad.type === 'cell' ? CELL_MAX_HEALTH : MAX_HEALTH),
+      food: savedTad.food || 0,
+      nucleotides: savedTad.nucleotides || 0,
+      angle: Math.random() * Math.PI * 2,
+      wiggleOffset: Math.random() * Math.PI * 2,
+      // Tadpole upgrades
+      healthLevel: savedTad.healthLevel || 0,
+      strengthLevel: savedTad.strengthLevel || 0,
+      capacityLevel: savedTad.capacityLevel || 0,
+      maxHealthBonus: savedTad.maxHealthBonus || 0,
+      strengthBonus: savedTad.strengthBonus || 0,
+      // Cell upgrades
+      cellHealthLevel: savedTad.cellHealthLevel || 0,
+      cellStrengthLevel: savedTad.cellStrengthLevel || 0,
+      cellCapacityLevel: savedTad.cellCapacityLevel || 0,
+      cellSpeedLevel: savedTad.cellSpeedLevel || 0,
+      hasCellTail: savedTad.hasCellTail || false,
+      hasProtector: savedTad.hasProtector || false,
+      hasSword: savedTad.hasSword || false
+    };
+
+    myTadpoles.push(tad);
+    if (index === 0) {
+      selectedTadpoles.add(tad.id);
+    }
+  });
+
+  updateSelectionCount();
+  showSaveIndicator('Progress loaded!');
+}
+
+// Show save indicator
+function showSaveIndicator(message) {
+  let indicator = document.querySelector('.save-indicator');
+  if (!indicator) {
+    indicator = document.createElement('div');
+    indicator.className = 'save-indicator';
+    document.body.appendChild(indicator);
+  }
+  indicator.textContent = message;
+  indicator.classList.add('show');
+  setTimeout(() => indicator.classList.remove('show'), 2000);
+}
+
+// Stats tracking
+let totalFoodCollected = 0;
+let totalKills = 0;
+let totalDeaths = 0;
+
+// Login modal event listeners
+loginBtn?.addEventListener('click', () => {
+  loginModal.classList.remove('hidden');
+});
+
+loginCloseBtn?.addEventListener('click', () => {
+  loginModal.classList.add('hidden');
+});
+
+tabLogin?.addEventListener('click', () => {
+  tabLogin.classList.add('active');
+  tabRegister.classList.remove('active');
+  loginForm.classList.remove('hidden');
+  registerForm.classList.add('hidden');
+  loginError.textContent = '';
+});
+
+tabRegister?.addEventListener('click', () => {
+  tabRegister.classList.add('active');
+  tabLogin.classList.remove('active');
+  registerForm.classList.remove('hidden');
+  loginForm.classList.add('hidden');
+  registerError.textContent = '';
+});
+
+loginForm?.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const email = document.getElementById('loginEmail').value;
+  const password = document.getElementById('loginPassword').value;
+  login(email, password);
+});
+
+registerForm?.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const username = document.getElementById('registerUsername').value;
+  const email = document.getElementById('registerEmail').value;
+  const password = document.getElementById('registerPassword').value;
+  const confirm = document.getElementById('registerConfirm').value;
+
+  if (password !== confirm) {
+    registerError.textContent = 'Passwords do not match';
+    return;
+  }
+  register(username, email, password);
+});
+
+// Close modal on background click
+loginModal?.addEventListener('click', (e) => {
+  if (e.target === loginModal) {
+    loginModal.classList.add('hidden');
+  }
+});
+
+// Auto-save periodically when logged in
+setInterval(() => {
+  if (currentUser && myTadpoles.length > 0) {
+    saveProgressToServer();
+  }
+}, SAVE_INTERVAL);
+
+// Check session on page load
+checkSession();
+
+// ===== End Authentication System =====
 
 // Tutorial system
 const tutorialTooltip = document.getElementById('tutorialTooltip');
@@ -283,26 +607,29 @@ const techNodes = {
 // Cell-specific technology tree
 const cellTechNodes = {
   // Defense branch (root) - Health for cells
-  cellTechWall: { type: 'cellHealth', level: 1, cost: 8, requires: null },
-  cellTechER: { type: 'cellHealth', level: 2, cost: 12, requires: 'cellTechWall' },
-  cellTechGolgi: { type: 'cellHealth', level: 3, cost: 18, requires: 'cellTechER' },
+  cellTechWall: { type: 'cellHealth', level: 1, cost: 8, requires: null, branch: 'defense' },
+  cellTechER: { type: 'cellHealth', level: 2, cost: 12, requires: 'cellTechWall', branch: 'defense' },
+  cellTechGolgi: { type: 'cellHealth', level: 3, cost: 18, requires: 'cellTechER', branch: 'defense' },
+  cellTechProtector: { type: 'cellProtector', level: 4, cost: 25, requires: 'cellTechGolgi', branch: 'defense' },
   // Storage branch (branches from Defense)
-  cellTechStorage: { type: 'cellCapacity', level: 1, cost: 6, requires: 'cellTechWall' },
-  cellTechLipid: { type: 'cellCapacity', level: 2, cost: 10, requires: 'cellTechStorage' },
-  cellTechGlycogen: { type: 'cellCapacity', level: 3, cost: 15, requires: 'cellTechLipid' },
-  // Speed branch (root) - NEW! Level 2 gives tail
-  cellTechCilia: { type: 'cellSpeed', level: 1, cost: 6, requires: null },
-  cellTechMotor: { type: 'cellSpeed', level: 2, cost: 12, requires: 'cellTechCilia' }, // Gives tail!
-  cellTechJet: { type: 'cellSpeed', level: 3, cost: 18, requires: 'cellTechMotor' },
+  cellTechStorage: { type: 'cellCapacity', level: 1, cost: 6, requires: 'cellTechWall', branch: 'defense' },
+  cellTechLipid: { type: 'cellCapacity', level: 2, cost: 10, requires: 'cellTechStorage', branch: 'defense' },
+  cellTechGlycogen: { type: 'cellCapacity', level: 3, cost: 15, requires: 'cellTechLipid', branch: 'defense' },
+  cellTechHibernate: { type: 'cellHibernate', level: 4, cost: 20, requires: 'cellTechGlycogen', branch: 'defense' },
+  // Speed branch (root) - Level 2 gives tail
+  cellTechCilia: { type: 'cellSpeed', level: 1, cost: 6, requires: null, branch: 'speed' },
+  cellTechMotor: { type: 'cellSpeed', level: 2, cost: 12, requires: 'cellTechCilia', branch: 'speed' },
+  cellTechJet: { type: 'cellSpeed', level: 3, cost: 18, requires: 'cellTechMotor', branch: 'speed' },
   // Offense branch (root) - Strength for cells
-  cellTechEnzymes: { type: 'cellStrength', level: 1, cost: 8, requires: null },
-  cellTechToxin: { type: 'cellStrength', level: 2, cost: 12, requires: 'cellTechEnzymes' },
-  cellTechPredator: { type: 'cellStrength', level: 3, cost: 18, requires: 'cellTechToxin' }
+  cellTechEnzymes: { type: 'cellStrength', level: 1, cost: 8, requires: null, branch: 'offense' },
+  cellTechToxin: { type: 'cellStrength', level: 2, cost: 12, requires: 'cellTechEnzymes', branch: 'offense' },
+  cellTechPredator: { type: 'cellStrength', level: 3, cost: 18, requires: 'cellTechToxin', branch: 'offense' },
+  cellTechSword: { type: 'cellSword', level: 4, cost: 25, requires: 'cellTechPredator', branch: 'offense' }
 };
 
 // Cell upgrade bonuses
 const CELL_HEALTH_BONUSES = [30, 60, 90]; // Cumulative health bonus per level
-const CELL_STRENGTH_BONUSES = [15, 30, 50]; // Cumulative damage bonus per level
+const CELL_STRENGTH_BONUSES = [15, 30, 50, 75]; // Cumulative damage bonus per level (4 levels now)
 const CELL_CAPACITY_BONUSES = [15, 30, 50]; // Cumulative capacity bonus per level
 const CELL_SPEED_BONUSES = [0.15, 0.25, 0.40]; // Speed multiplier bonus per level
 
@@ -493,6 +820,7 @@ const CELL_RADIUS = 30; // Player cells
 const NPC_CELL_RADIUS = 40; // NPC cells are bigger than player cells
 // Combat stats - NPCs have advantage until player upgrades
 const MAX_HEALTH = 70; // Player base health (weak at start)
+const CELL_MAX_HEALTH = 120; // Player cell base health
 const NPC_TADPOLE_HEALTH = 80; // NPC tadpoles - tankier than players
 const NPC_CELL_HEALTH = 200; // NPC cells - very tanky
 const NPC_MAX_HEALTH = 100; // Default NPC health (used for generic NPCs)
@@ -596,6 +924,13 @@ socket.on('init', (data) => {
   player.type = 'tadpole';
   player.food = 0; // Start with 0 food
   player.radius = TADPOLE_RADIUS; // Override server radius to use consistent client size
+
+  // Use username if logged in
+  if (currentUser) {
+    player.name = currentUser.username;
+    socket.emit('setName', currentUser.username);
+  }
+
   initializeTadpole(player);
   myTadpoles = [player];
 
@@ -931,12 +1266,33 @@ socket.on('npcAttack', (data) => {
           closestTad = tad;
         }
       }
-      // Apply damage
-      closestTad.health -= data.damage;
-      closestTad.lastHit = Date.now();
-      closestTad.vx += data.knockbackX;
-      closestTad.vy += data.knockbackY;
-      spawnDamageText(closestTad.x, closestTad.y, data.damage);
+
+      // Check if protected by a Protector's bubble shield
+      let isProtected = false;
+      for (let protector of myTadpoles) {
+        if (protector.type === 'cell' && protector.hasProtector && protector.bubbleShieldActive) {
+          const shieldRadius = protector.radius * 4;
+          const dx = closestTad.x - protector.x;
+          const dy = closestTad.y - protector.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < shieldRadius) {
+            isProtected = true;
+            break;
+          }
+        }
+      }
+
+      if (!isProtected) {
+        // Apply damage
+        closestTad.health -= data.damage;
+        closestTad.lastHit = Date.now();
+        closestTad.vx += data.knockbackX;
+        closestTad.vy += data.knockbackY;
+        spawnDamageText(closestTad.x, closestTad.y, data.damage);
+      } else {
+        // Shield absorbed the hit - show visual feedback
+        spawnDamageText(closestTad.x, closestTad.y, 0, 'Shielded!');
+      }
     }
   }
 });
@@ -997,10 +1353,50 @@ function initializeParticles(centerX = 0, centerY = 0) {
 }
 initializeParticles(); // Initial spawn around origin, will be recycled when player spawns
 
-// Name input with cheat commands (console-style, execute on Enter)
-nameInput.addEventListener('keydown', (e) => {
+// Get player display name (username if logged in, or PlayerXXX)
+function getPlayerName() {
+  if (currentUser) {
+    return currentUser.username;
+  }
+  // Use stored name or the name from first tadpole
+  if (myTadpoles.length > 0 && myTadpoles[0].name) {
+    return myTadpoles[0].name;
+  }
+  return 'Player' + Math.floor(Math.random() * 1000);
+}
+
+// Display a chat message on screen
+function displayChatMessage(name, message) {
+  const msgDiv = document.createElement('div');
+  msgDiv.className = 'chat-message';
+  msgDiv.innerHTML = `<span class="chat-name">${escapeHtml(name)}:</span>${escapeHtml(message)}`;
+  chatDisplay.appendChild(msgDiv);
+
+  // Remove message after animation completes (5 seconds)
+  setTimeout(() => {
+    if (msgDiv.parentNode) {
+      msgDiv.remove();
+    }
+  }, 5000);
+
+  // Limit visible messages to 5
+  while (chatDisplay.children.length > 5) {
+    chatDisplay.removeChild(chatDisplay.firstChild);
+  }
+}
+
+// Escape HTML to prevent XSS
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Chat input with cheat commands (console-style, execute on Enter)
+chatInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
-    const input = nameInput.value.trim();
+    const input = chatInput.value.trim();
+    if (!input) return;
 
     // Check for cheat commands
     if (input.startsWith('/food ')) {
@@ -1010,7 +1406,7 @@ nameInput.addEventListener('keydown', (e) => {
         myTadpoles.forEach(tad => {
           tad.food = (tad.food || 0) + amount;
         });
-        nameInput.value = '';
+        chatInput.value = '';
         console.log(`Food adjusted by ${amount} for all creatures`);
         updateStatsDisplay();
       }
@@ -1026,7 +1422,7 @@ nameInput.addEventListener('keydown', (e) => {
           tad.health = playerHealth;
         });
         updateStatsDisplay();
-        nameInput.value = '';
+        chatInput.value = '';
         console.log(`Health set to ${playerHealth}`);
       }
       return;
@@ -1037,7 +1433,7 @@ nameInput.addEventListener('keydown', (e) => {
       if (!isNaN(amount)) {
         playerStrength = Math.max(0, amount);
         updateStatsDisplay();
-        nameInput.value = '';
+        chatInput.value = '';
         console.log(`Strength set to ${playerStrength}`);
       }
       return;
@@ -1071,7 +1467,7 @@ nameInput.addEventListener('keydown', (e) => {
           initializeTadpole(newTad);
           myTadpoles.push(newTad);
 
-          nameInput.value = '';
+          chatInput.value = '';
           console.log('New tadpole spawned via /split cheat');
         }
       }
@@ -1080,14 +1476,14 @@ nameInput.addEventListener('keydown', (e) => {
 
     if (input === '/op') {
       invincibilityMode = !invincibilityMode;
-      nameInput.value = '';
+      chatInput.value = '';
       console.log(`Invincibility mode ${invincibilityMode ? 'enabled' : 'disabled'}`);
       return;
     }
 
     if (input === '/reset') {
       socket.emit('resetWorld');
-      nameInput.value = '';
+      chatInput.value = '';
       console.log('World reset requested');
       return;
     }
@@ -1096,7 +1492,7 @@ nameInput.addEventListener('keydown', (e) => {
       tutorialState.completed = true;
       localStorage.setItem('tutorialCompleted', 'true');
       hideTutorialTooltip();
-      nameInput.value = '';
+      chatInput.value = '';
       console.log('Tutorial disabled');
       return;
     }
@@ -1109,7 +1505,7 @@ nameInput.addEventListener('keydown', (e) => {
       tutorialState.movementDistance = 0;
       tutorialState.startPos = myTadpoles.length > 0 ? { x: myTadpoles[0].x, y: myTadpoles[0].y } : null;
       localStorage.setItem('tutorialCompleted', 'false');
-      nameInput.value = '';
+      chatInput.value = '';
       console.log('Tutorial reset');
       checkTutorialTriggers();
       return;
@@ -1124,19 +1520,25 @@ nameInput.addEventListener('keydown', (e) => {
           selectedTad.isTransforming = true;
           selectedTad.transformationStartTime = Date.now();
           selectedTad.baseRadius = selectedTad.radius;
-          nameInput.value = '';
+          chatInput.value = '';
           console.log('Mitosis cheat: transformation started without cost');
         }
       }
       return;
     }
 
-    // Normal name setting
-    if (input && myTadpoles.length > 0) {
-      socket.emit('setName', input);
-      myTadpoles.forEach(tad => tad.name = input);
-    }
+    // Send chat message (not a cheat command)
+    const playerName = getPlayerName();
+    socket.emit('chat', { name: playerName, message: input });
+    // Display own message immediately
+    displayChatMessage(playerName, input);
+    chatInput.value = '';
   }
+});
+
+// Listen for chat messages from other players
+socket.on('chat', (data) => {
+  displayChatMessage(data.name, data.message);
 });
 
 // Tadpole helper functions
@@ -1204,21 +1606,26 @@ function updateCellTail(entity, time) {
 
   // Kick-off detection for natural thrust motion
   const prevSpeed = entity.cellTailPrevSpeed || 0;
-  const acceleration = speed - prevSpeed;
   entity.cellTailPrevSpeed = speed;
 
   // Initialize kick properties if not set
   if (entity.cellTailKickIntensity === undefined) entity.cellTailKickIntensity = 0;
   if (entity.cellTailKickPhase === undefined) entity.cellTailKickPhase = 0;
 
-  // Trigger kick-off when accelerating
-  if (acceleration > 0.015) {
-    entity.cellTailKickIntensity = Math.min(entity.cellTailKickIntensity + acceleration * 12, 2.5);
+  // Detect movement START - trigger strong sprint at beginning
+  // Protectors don't sprint - they move at constant slow speed
+  const wasStationary = prevSpeed < 0.3;
+  const isMoving = speed > 0.5;
+  const startedMoving = wasStationary && isMoving;
+
+  // Strong kick at movement START (sprint propulsion) - not for Protectors
+  if (startedMoving && !entity.hasProtector) {
+    entity.cellTailKickIntensity = 2.5; // Strong initial thrust
     entity.cellTailKickPhase = time * 18;
   }
 
-  // Decay kick intensity over time
-  entity.cellTailKickIntensity *= 0.9;
+  // Decay kick intensity quickly - sprint is only at the start
+  entity.cellTailKickIntensity *= 0.85;
 
   // Tail is at a FIXED corner of the cell body (opposite to front)
   const tailAngle = entity.angle + Math.PI;
@@ -1563,6 +1970,17 @@ document.addEventListener('keydown', (e) => {
     updateSelectionCount();
     console.log('Support selection cancelled with Escape');
   }
+
+  // 'B' toggles bubble shield for Protector cells
+  if (e.key.toLowerCase() === 'b') {
+    myTadpoles.forEach(tad => {
+      if (tad.type === 'cell' && tad.hasProtector && selectedTadpoles.has(tad.id)) {
+        tad.bubbleShieldActive = !tad.bubbleShieldActive;
+        // Notify server of shield state for protection from NPCs
+        socket.emit('bubbleShield', { oderId: tad.id, active: tad.bubbleShieldActive });
+      }
+    });
+  }
 });
 
 document.addEventListener('keyup', (e) => {
@@ -1631,6 +2049,20 @@ hibernateBtn.addEventListener('click', () => {
   }
 });
 
+shieldBtn.addEventListener('click', () => {
+  if (selectedTadpoles.size > 0) {
+    const selectedId = Array.from(selectedTadpoles)[0];
+    const selectedTad = myTadpoles.find(t => t.id === selectedId);
+
+    if (selectedTad && selectedTad.type === 'cell' && selectedTad.hasProtector) {
+      selectedTad.bubbleShieldActive = !selectedTad.bubbleShieldActive;
+      // Notify server of shield state for protection from NPCs
+      socket.emit('bubbleShield', { oderId: selectedTad.id, active: selectedTad.bubbleShieldActive });
+      updateSelectionCount();
+    }
+  }
+});
+
 restartBtn.addEventListener('click', () => {
   location.reload();
 });
@@ -1662,38 +2094,77 @@ tabEvolution?.addEventListener('click', () => {
 
 // Tech Tree click handlers (for tech nodes and evolution options)
 function handleTechClick(nodeId) {
+  console.log('Tech click:', nodeId);
+
   // Check both tadpole and cell tech trees
   const isCellTech = nodeId.startsWith('cellTech');
   const techData = isCellTech ? cellTechNodes[nodeId] : techNodes[nodeId];
-  if (!techData) return;
+  if (!techData) {
+    console.log('No tech data for', nodeId);
+    return;
+  }
 
-  if (selectedTadpoles.size === 0) return;
+  if (selectedTadpoles.size === 0) {
+    console.log('No creature selected');
+    return;
+  }
   const selectedId = Array.from(selectedTadpoles)[0];
   const selectedTad = myTadpoles.find(t => t.id === selectedId);
-  if (!selectedTad) return;
+  if (!selectedTad) {
+    console.log('Selected creature not found');
+    return;
+  }
 
   // Verify creature type matches tech tree
-  if (isCellTech && selectedTad.type !== 'cell') return;
-  if (!isCellTech && selectedTad.type === 'cell' && techData.type !== 'transform') return;
+  if (isCellTech && selectedTad.type !== 'cell') {
+    console.log('Cell tech requires cell, but creature is', selectedTad.type);
+    return;
+  }
+  if (!isCellTech && selectedTad.type === 'cell' && techData.type !== 'transform') {
+    console.log('Tadpole tech for cell creature');
+    return;
+  }
 
   const currentFood = selectedTad.food || 0;
   const techTree = isCellTech ? cellTechNodes : techNodes;
+
+  // Check if branch is locked (mutually exclusive columns for cell tech)
+  if (isCellTech && techData.branch) {
+    const chosenBranch = getCellBranch(selectedTad);
+    console.log('Branch check:', techData.branch, 'chosen:', chosenBranch);
+    if (chosenBranch && techData.branch !== chosenBranch) {
+      console.log('Branch locked - different branch already chosen');
+      return; // Cannot research from a different branch
+    }
+  }
 
   // Check if node is locked (prerequisite not met)
   if (techData.requires) {
     const reqNode = techTree[techData.requires];
     if (reqNode) {
       const reqLevel = getUpgradeLevel(selectedTad, reqNode.type);
-      if (reqLevel < reqNode.level) return; // Prerequisite not researched
+      console.log('Prerequisite check:', techData.requires, 'reqLevel:', reqLevel, 'needs:', reqNode.level);
+      if (reqLevel < reqNode.level) {
+        console.log('Prerequisite not met');
+        return; // Prerequisite not researched
+      }
     }
   }
 
   // Check if already researched
   const currentLevel = getUpgradeLevel(selectedTad, techData.type);
-  if (techData.type !== 'transform' && currentLevel >= techData.level) return;
+  if (techData.type !== 'transform' && currentLevel >= techData.level) {
+    console.log('Already researched');
+    return;
+  }
 
   // Check if can afford
-  if (currentFood < techData.cost) return;
+  if (currentFood < techData.cost) {
+    console.log('Cannot afford:', currentFood, '<', techData.cost);
+    return;
+  }
+
+  console.log('Purchasing tech:', nodeId, 'for', techData.cost, 'food');
 
   // Apply the upgrade
   selectedTad.food = currentFood - techData.cost;
@@ -1752,20 +2223,121 @@ function handleTechClick(nodeId) {
       selectedTad.cellTail = []; // Initialize tail array - will be populated in update
       selectedTad.hasCellTail = true;
     }
+  } else if (techData.type === 'cellProtector') {
+    selectedTad.hasProtector = true;
+    selectedTad.canBubbleShield = true;
+  } else if (techData.type === 'cellSword') {
+    selectedTad.hasSword = true;
+    // Additional damage bonus from sword
+    selectedTad.cellStrengthBonus = (selectedTad.cellStrengthBonus || 0) + 25;
+  } else if (techData.type === 'cellHibernate') {
+    selectedTad.canHibernate = true;
   }
 
   updateUpgradeMenu();
   updateSelectionCount();
 }
 
+// Handle evolution actions (Hibernate, Split) - these are not tech tree items
+function handleEvolutionAction(actionId) {
+  if (selectedTadpoles.size === 0) return;
+  const selectedId = Array.from(selectedTadpoles)[0];
+  const selectedTad = myTadpoles.find(t => t.id === selectedId);
+  if (!selectedTad || selectedTad.type !== 'cell') return;
+
+  if (actionId === 'techHibernate') {
+    // Toggle hibernation
+    if (selectedTad.isHibernating) {
+      selectedTad.isHibernating = false;
+      selectedTad.hibernationStartTime = null;
+    } else {
+      selectedTad.isHibernating = true;
+      selectedTad.hibernationStartTime = Date.now();
+    }
+    upgradeMenu.classList.add('hidden');
+  } else if (actionId === 'techSplit') {
+    const splitCost = 15;
+    if ((selectedTad.food || 0) < splitCost) return;
+
+    // Deduct cost
+    selectedTad.food -= splitCost;
+
+    // Create split animation
+    selectedTad.isSplitting = true;
+    selectedTad.splitStartTime = Date.now();
+
+    // After animation, create the new cell
+    setTimeout(() => {
+      if (!selectedTad.isSplitting) return; // Cancelled
+
+      // Create new cell - virgin with no upgrades
+      const newCell = {
+        id: `cell_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        x: selectedTad.x + Math.cos(selectedTad.angle + Math.PI) * selectedTad.radius * 2.5,
+        y: selectedTad.y + Math.sin(selectedTad.angle + Math.PI) * selectedTad.radius * 2.5,
+        vx: 0,
+        vy: 0,
+        radius: selectedTad.radius,
+        color: selectedTad.color,
+        name: selectedTad.name + "'",
+        type: 'cell',
+        health: CELL_MAX_HEALTH, // Full health for new cell
+        food: 0,
+        angle: selectedTad.angle + Math.PI,
+        wiggleOffset: Math.random() * Math.PI * 2,
+        // No upgrades - virgin cell
+        cellHealthLevel: 0,
+        cellStrengthLevel: 0,
+        cellCapacityLevel: 0,
+        cellSpeedLevel: 0,
+        cellMaxHealthBonus: 0,
+        cellStrengthBonus: 0,
+        cellCapacityBonus: 0,
+        cellSpeedBonus: 0,
+        hasCellTail: false,
+        hasProtector: false,
+        hasSword: false,
+        // Birth animation
+        birthTime: Date.now(),
+        birthDuration: 800
+      };
+
+      // Halve original cell's health
+      selectedTad.health = Math.floor((selectedTad.health || CELL_MAX_HEALTH) / 2);
+      selectedTad.isSplitting = false;
+
+      // Add to player's creatures
+      myTadpoles.push(newCell);
+      selectedTadpoles.add(newCell.id);
+
+      updateSelectionCount();
+    }, 600); // 600ms split animation
+
+    upgradeMenu.classList.add('hidden');
+  }
+}
+
 // Tech nodes (both tadpole and cell)
 document.querySelectorAll('.tech-node').forEach(node => {
-  node.addEventListener('click', () => handleTechClick(node.id));
+  console.log('Adding click handler for:', node.id);
+  node.addEventListener('click', (e) => {
+    // Visual feedback for debugging
+    node.style.outline = '2px solid yellow';
+    setTimeout(() => node.style.outline = '', 200);
+    handleTechClick(node.id);
+  });
 });
 
 // Evolution options
 document.querySelectorAll('.evolution-option').forEach(node => {
-  node.addEventListener('click', () => handleTechClick(node.id));
+  node.addEventListener('click', () => {
+    // Special handling for hibernate and split (not tech tree items)
+    if (node.id === 'techHibernate' || node.id === 'techSplit') {
+      handleEvolutionAction(node.id);
+    } else {
+      handleTechClick(node.id);
+    }
+  });
 });
 
 function getUpgradeLevel(tad, type) {
@@ -1779,7 +2351,27 @@ function getUpgradeLevel(tad, type) {
   if (type === 'cellStrength') return tad.cellStrengthLevel || 0;
   if (type === 'cellCapacity') return tad.cellCapacityLevel || 0;
   if (type === 'cellSpeed') return tad.cellSpeedLevel || 0;
+  if (type === 'cellProtector') return tad.hasProtector ? 4 : 0;
+  if (type === 'cellSword') return tad.hasSword ? 4 : 0;
+  if (type === 'cellHibernate') return tad.canHibernate ? 4 : 0;
   return 0;
+}
+
+// Get the chosen cell branch for a creature (defense, speed, or offense)
+function getCellBranch(tad) {
+  if (!tad || tad.type !== 'cell') return null;
+
+  // Check if any branch has been researched (level 1 node)
+  if ((tad.cellHealthLevel || 0) >= 1 || (tad.cellCapacityLevel || 0) >= 1 || tad.hasProtector) {
+    return 'defense';
+  }
+  if ((tad.cellSpeedLevel || 0) >= 1) {
+    return 'speed';
+  }
+  if ((tad.cellStrengthLevel || 0) >= 1 || tad.hasSword) {
+    return 'offense';
+  }
+  return null; // No branch chosen yet
 }
 
 // Legacy button handlers (kept for backward compatibility, buttons are hidden)
@@ -1921,6 +2513,13 @@ function updateUpgradeMenu() {
 
   // Helper function to update tech nodes
   function updateTechTree(techTree) {
+    // Get the chosen branch for cell tech tree (mutually exclusive columns)
+    const chosenBranch = techTree === cellTechNodes ? getCellBranch(selectedTad) : null;
+    const isDebugCellTree = techTree === cellTechNodes;
+    if (isDebugCellTree) {
+      console.log('Updating cell tech tree, chosen branch:', chosenBranch);
+    }
+
     // First pass: determine the max researched level for each type
     const maxResearchedLevel = {};
     Object.keys(techTree).forEach(nodeId => {
@@ -1941,6 +2540,12 @@ function updateUpgradeMenu() {
         ? selectedTad.type === 'cell'
         : currentLevel >= techData.level;
 
+      // Check if branch is locked (mutually exclusive columns for cell tech)
+      let isBranchLocked = false;
+      if (techData.branch && chosenBranch && techData.branch !== chosenBranch) {
+        isBranchLocked = true;
+      }
+
       // Check if prerequisite is met
       let isLocked = false;
       if (techData.requires) {
@@ -1949,14 +2554,14 @@ function updateUpgradeMenu() {
           const reqLevel = getUpgradeLevel(selectedTad, reqNode.type);
           isLocked = reqLevel < reqNode.level;
         }
+      } else if (techData.level > 1) {
+        // No explicit prerequisite but level > 1: need previous level of same type
+        isLocked = currentLevel < techData.level - 1;
       }
 
-      // For non-researched nodes, also check if previous level is researched
-      if (!isResearched && !isLocked && techData.level > 1) {
-        const prevLevel = currentLevel;
-        if (prevLevel < techData.level - 1) {
-          isLocked = true;
-        }
+      // Branch lock overrides other states
+      if (isBranchLocked) {
+        isLocked = true;
       }
 
       // Check affordability (unlocked but can't afford)
@@ -1971,12 +2576,19 @@ function updateUpgradeMenu() {
       // Check fog of war: node is 2+ levels beyond current progress
       const myResearchedLevel = maxResearchedLevel[techData.type] || 0;
       const levelsAhead = techData.level - myResearchedLevel;
-      const isFogged = isLocked && levelsAhead >= 2;
+      const isFogged = isLocked && levelsAhead >= 2 && !isBranchLocked;
+
+      // Debug logging for cell tech nodes
+      if (isDebugCellTree && (nodeId === 'cellTechWall' || nodeId === 'cellTechER' || nodeId === 'cellTechStorage')) {
+        console.log(`Node ${nodeId}: researched=${isResearched}, locked=${isLocked}, branchLocked=${isBranchLocked}, fogged=${isFogged}, unaffordable=${isUnaffordable}, canAfford=${canAfford}, food=${currentFood}, cost=${techData.cost}`);
+      }
 
       // Update node classes
-      node.classList.remove('researched', 'locked', 'unaffordable', 'fog');
+      node.classList.remove('researched', 'locked', 'unaffordable', 'fog', 'branch-locked');
       if (isResearched) {
         node.classList.add('researched');
+      } else if (isBranchLocked) {
+        node.classList.add('locked', 'branch-locked');
       } else if (isFogged) {
         node.classList.add('locked', 'fog');
       } else if (isLocked) {
@@ -1990,6 +2602,8 @@ function updateUpgradeMenu() {
       if (costEl) {
         if (isResearched) {
           costEl.textContent = '✓';
+        } else if (isBranchLocked) {
+          costEl.textContent = '✗';
         } else if (isFogged) {
           costEl.textContent = '?';
         } else {
@@ -1997,11 +2611,67 @@ function updateUpgradeMenu() {
         }
       }
     });
+
+    // Update branch visual state (add class to whole branch container)
+    if (techTree === cellTechNodes) {
+      const defenseBranch = document.querySelector('.defense-branch');
+      const speedBranch = document.querySelector('.speed-branch');
+      const offenseBranch = document.querySelector('.offense-branch');
+
+      [defenseBranch, speedBranch, offenseBranch].forEach(branch => {
+        if (branch) branch.classList.remove('branch-disabled');
+      });
+
+      if (chosenBranch) {
+        if (chosenBranch !== 'defense' && defenseBranch) defenseBranch.classList.add('branch-disabled');
+        if (chosenBranch !== 'speed' && speedBranch) speedBranch.classList.add('branch-disabled');
+        if (chosenBranch !== 'offense' && offenseBranch) offenseBranch.classList.add('branch-disabled');
+      }
+    }
   }
 
   // Update both tech trees (tadpole and cell)
   updateTechTree(techNodes);
   updateTechTree(cellTechNodes);
+
+  // Update evolution options visibility
+  const techMitosis = document.getElementById('techMitosis');
+  const techHibernate = document.getElementById('techHibernate');
+  const techSplit = document.getElementById('techSplit');
+
+  if (isCell) {
+    // Hide Mitosis for cells, show Hibernate and Split
+    if (techMitosis) techMitosis.classList.add('hidden');
+    if (techHibernate) {
+      // Only show Hibernate if the tech is unlocked
+      if (selectedTad.canHibernate) {
+        techHibernate.classList.remove('hidden');
+        techHibernate.classList.remove('locked');
+        // Update hibernate text based on current state
+        const nameEl = techHibernate.querySelector('.evolution-name');
+        if (nameEl) {
+          nameEl.textContent = selectedTad.isHibernating ? 'Cancel Hibernation' : 'Hibernate';
+        }
+      } else {
+        techHibernate.classList.add('hidden');
+      }
+    }
+    if (techSplit) {
+      techSplit.classList.remove('hidden');
+      // Update affordability
+      const splitCost = 15;
+      if (currentFood < splitCost) {
+        techSplit.classList.add('unaffordable');
+      } else {
+        techSplit.classList.remove('unaffordable');
+      }
+    }
+  } else {
+    // Show Mitosis for tadpoles, hide Hibernate and Split
+    if (techMitosis) techMitosis.classList.remove('hidden');
+    if (techHibernate) techHibernate.classList.add('hidden');
+    if (techSplit) techSplit.classList.add('hidden');
+  }
 
   // Legacy: update hidden elements (backward compatibility)
   const healthMaxed = healthUpgradeLevel >= MAX_UPGRADE_LEVEL;
@@ -2142,24 +2812,30 @@ function updateSelectionCount() {
     supportBtn.classList.add('hidden');
   }
 
-  // Show Hibernate button only when a cell is selected
+  // Hibernate is now in the Evolution tab - keep button hidden
+  hibernateBtn.classList.add('hidden');
+
+  // Show Shield button only for Protector cells
   if (selectedTadpoles.size > 0) {
     const selectedId = Array.from(selectedTadpoles)[0];
     const selectedTad = myTadpoles.find(t => t.id === selectedId);
-    if (selectedTad && selectedTad.type === 'cell') {
-      hibernateBtn.classList.remove('hidden');
-
-      // Update button text based on hibernation state
-      if (selectedTad.isHibernating) {
-        hibernateBtn.textContent = 'Cancel Hibernation';
+    if (selectedTad && selectedTad.type === 'cell' && selectedTad.hasProtector) {
+      shieldBtn.classList.remove('hidden');
+      // Update button text based on shield state
+      if (selectedTad.bubbleShieldActive) {
+        shieldBtn.textContent = 'Deactivate Shield';
+        shieldBtn.style.background = 'rgba(100, 200, 255, 0.3)';
+        shieldBtn.style.borderColor = 'rgba(100, 200, 255, 0.7)';
       } else {
-        hibernateBtn.textContent = 'Hibernate';
+        shieldBtn.textContent = 'Shield';
+        shieldBtn.style.background = '';
+        shieldBtn.style.borderColor = '';
       }
     } else {
-      hibernateBtn.classList.add('hidden');
+      shieldBtn.classList.add('hidden');
     }
   } else {
-    hibernateBtn.classList.add('hidden');
+    shieldBtn.classList.add('hidden');
   }
 
   // Check if selection changed
@@ -2723,9 +3399,31 @@ function update(deltaTime = 1) {
 
     // Apply movement
     let moveSpeed = tad.type === 'cell' ? MOVE_SPEED * 0.4 : MOVE_SPEED;
-    // Apply cell speed bonus from upgrades
-    if (tad.type === 'cell' && tad.cellSpeedBonus) {
-      moveSpeed *= (1 + tad.cellSpeedBonus);
+
+    // Protector cells have fixed slow speed - no bonuses apply
+    if (tad.type === 'cell' && tad.hasProtector) {
+      // Protectors with active shield cannot move at all
+      if (tad.bubbleShieldActive) {
+        moveSpeed = 0;
+        tad.vx = 0;
+        tad.vy = 0;
+      } else {
+        // Fixed slow constant speed - ignores all speed upgrades
+        moveSpeed = MOVE_SPEED * 0.15;
+      }
+    } else {
+      // Normal cells get speed bonuses
+      // Apply cell speed bonus from upgrades
+      if (tad.type === 'cell' && tad.cellSpeedBonus) {
+        moveSpeed *= (1 + tad.cellSpeedBonus);
+      }
+      // Cells with tails are faster than tadpoles
+      if (tad.type === 'cell' && tad.hasCellTail) {
+        moveSpeed = MOVE_SPEED * 1.3; // 30% faster than tadpoles
+        if (tad.cellSpeedBonus) {
+          moveSpeed *= (1 + tad.cellSpeedBonus * 0.5); // Additional bonus scales less
+        }
+      }
     }
     if (dx !== 0 || dy !== 0) {
       tad.vx += dx * moveSpeed;
@@ -3178,11 +3876,12 @@ function handleDeath(entity) {
   }
 }
 
-function spawnDamageText(x, y, damage) {
+function spawnDamageText(x, y, damage, customText = null) {
   damageTexts.push({
     x: x,
     y: y,
     damage: Math.round(damage),
+    customText: customText, // For "Shielded!" etc.
     startTime: Date.now(),
     duration: 1000 // 1 second
   });
@@ -3209,12 +3908,21 @@ function drawDamageTexts() {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    // Red text with black outline
+    // Use custom text if provided, otherwise show damage
+    let displayText;
+    let fillColor;
+    if (text.customText) {
+      displayText = text.customText;
+      fillColor = `rgba(100, 200, 255, ${opacity})`; // Blue for shield/special
+    } else {
+      displayText = `-${text.damage}`;
+      fillColor = `rgba(255, 50, 50, ${opacity})`; // Red for damage
+    }
+
     ctx.strokeStyle = `rgba(0, 0, 0, ${opacity})`;
     ctx.lineWidth = 2;
-    ctx.fillStyle = `rgba(255, 50, 50, ${opacity})`;
+    ctx.fillStyle = fillColor;
 
-    const displayText = `-${text.damage}`;
     ctx.strokeText(displayText, text.x, text.y + offsetY);
     ctx.fillText(displayText, text.x, text.y + offsetY);
 
@@ -4021,12 +4729,12 @@ function drawTadpole(entity, isMe, isNPC, isSelected) {
     }
   }
 
-  // Border - yellow for selected (only if 2+ creatures), white for own unselected
+  // Border - yellow for selected (only when controlling multiple creatures), white for own unselected
   if (isSelected && myTadpoles.length > 1) {
-    ctx.strokeStyle = 'rgba(255, 255, 0, 1)'; // Solid yellow
+    ctx.strokeStyle = 'rgba(255, 255, 0, 1)'; // Solid yellow for selected
     ctx.lineWidth = 2;
     ctx.stroke();
-  } else if (isMe) {
+  } else if (isMe && myTadpoles.length > 1) {
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
     ctx.lineWidth = 2;
     ctx.stroke();
@@ -4156,9 +4864,9 @@ function drawCell(entity, isMe, isSelected) {
         // Calculate outward direction from center (0,0) to this point on the edge
         const outwardAngle = Math.atan2(baseY, baseX);
 
-        // Much more irregular hair lengths (2-8 pixels, wider range) + strength bonus
-        const strengthBonus = (entity.strengthLevel || 0) * 0.8; // +0.8 length per strength level
-        const length = 2 + Math.random() * 6 + strengthBonus;
+        // Hair lengths (1-4 pixels) + strength bonus - 50% smaller
+        const strengthBonus = (entity.strengthLevel || 0) * 0.4; // +0.4 length per strength level
+        const length = 1 + Math.random() * 3 + strengthBonus;
 
         entity.hairs.push({
           baseX: baseX,
@@ -4241,12 +4949,12 @@ function drawCell(entity, isMe, isSelected) {
       ctx.quadraticCurveTo(entity.cellTail[i].x, entity.cellTail[i].y, xc, yc);
     }
 
-    // Create gradient for tail - white color fading to transparent
+    // Create gradient for tail - white color at 100% opacity
     const lastSeg = entity.cellTail[entity.cellTail.length - 1];
     const gradient = ctx.createLinearGradient(baseX, baseY, lastSeg.x, lastSeg.y);
-    gradient.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
-    gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.6)');
-    gradient.addColorStop(1, 'rgba(255, 255, 255, 0.2)');
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+    gradient.addColorStop(0.5, 'rgba(255, 255, 255, 1.0)');
+    gradient.addColorStop(1, 'rgba(255, 255, 255, 0.7)');
 
     ctx.strokeStyle = gradient;
     ctx.lineWidth = entity.radius * 0.4; // Thinner tail for cell
@@ -4366,15 +5074,30 @@ function drawCell(entity, isMe, isSelected) {
   }
 
   // Border - yellow for selected (only if 2+ creatures), white for own unselected
+  // Redraw hexagon path for border (previous path was overwritten by food particles)
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const angle = (Math.PI / 3) * i;
+    const px = Math.cos(angle) * entity.radius;
+    const py = Math.sin(angle) * entity.radius;
+    if (i === 0) {
+      ctx.moveTo(px, py);
+    } else {
+      ctx.lineTo(px, py);
+    }
+  }
+  ctx.closePath();
+
+  // Border - yellow for selected (only when controlling multiple creatures)
   if (isSelected && myTadpoles.length > 1) {
-    ctx.strokeStyle = 'rgba(255, 255, 0, 1)'; // Solid yellow
+    ctx.strokeStyle = 'rgba(255, 255, 0, 1)'; // Solid yellow for selected
     ctx.lineWidth = 2;
     ctx.stroke();
-  } else if (isMe) {
+  } else if (isMe && myTadpoles.length > 1) {
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
     ctx.lineWidth = 2;
     ctx.stroke();
-  } else {
+  } else if (!isMe) {
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
     ctx.lineWidth = 2;
     ctx.stroke();
@@ -4394,7 +5117,152 @@ function drawCell(entity, isMe, isSelected) {
     ctx.stroke();
   });
 
+  // Draw Protector symbol (iron cross) in center
+  if (entity.hasProtector) {
+    const symbolSize = entity.radius * 0.35;
+    ctx.strokeStyle = 'rgba(150, 150, 150, 0.9)'; // Iron gray
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+
+    // Draw cross/shield symbol
+    ctx.beginPath();
+    ctx.moveTo(0, -symbolSize);
+    ctx.lineTo(0, symbolSize);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-symbolSize * 0.7, 0);
+    ctx.lineTo(symbolSize * 0.7, 0);
+    ctx.stroke();
+
+    // Small diamond outline
+    ctx.beginPath();
+    ctx.moveTo(0, -symbolSize * 0.5);
+    ctx.lineTo(symbolSize * 0.35, 0);
+    ctx.lineTo(0, symbolSize * 0.5);
+    ctx.lineTo(-symbolSize * 0.35, 0);
+    ctx.closePath();
+    ctx.stroke();
+  }
+
+  // Draw Sword (spike on front of cell)
+  if (entity.hasSword) {
+    const swordLength = entity.radius * 0.8;
+    const swordWidth = entity.radius * 0.15;
+
+    // Sword points in facing direction (front of cell = angle 0 in local coords)
+    ctx.fillStyle = 'rgba(200, 200, 200, 0.95)'; // Silver blade
+    ctx.strokeStyle = 'rgba(100, 100, 100, 0.9)'; // Dark edge
+    ctx.lineWidth = 1;
+
+    ctx.beginPath();
+    // Blade triangle pointing forward
+    ctx.moveTo(entity.radius + swordLength, 0); // Tip
+    ctx.lineTo(entity.radius, -swordWidth);     // Base top
+    ctx.lineTo(entity.radius, swordWidth);      // Base bottom
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Hilt/guard at base
+    ctx.fillStyle = 'rgba(139, 90, 43, 0.9)'; // Brown handle
+    ctx.beginPath();
+    ctx.arc(entity.radius, 0, swordWidth * 1.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   ctx.restore();
+
+  // Draw split animation - cell stretches horizontally then separates
+  if (entity.isSplitting && entity.splitStartTime) {
+    const elapsed = Date.now() - entity.splitStartTime;
+    const duration = 600;
+    const progress = Math.min(elapsed / duration, 1);
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(entity.angle); // Align with cell facing direction
+
+    // Phase 1 (0-0.7): Cell stretches horizontally to ~2 cell widths
+    // Phase 2 (0.7-1.0): Cells separate from each other
+    const stretchPhaseEnd = 0.7;
+
+    ctx.fillStyle = entity.color;
+
+    if (progress < stretchPhaseEnd) {
+      // Stretching phase - draw as elongated ellipse
+      const stretchProgress = progress / stretchPhaseEnd;
+      const stretchX = 1 + stretchProgress * 1.2; // Stretch to ~2.2x width
+      const stretchY = 1 - stretchProgress * 0.3; // Slightly compress vertically
+
+      ctx.beginPath();
+      ctx.ellipse(0, 0, entity.radius * stretchX, entity.radius * stretchY, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Add pinch line forming in middle during late stretch
+      if (stretchProgress > 0.5) {
+        const pinchOpacity = (stretchProgress - 0.5) * 2;
+        ctx.strokeStyle = `rgba(0, 0, 0, ${pinchOpacity * 0.3})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, -entity.radius * stretchY * 0.8);
+        ctx.lineTo(0, entity.radius * stretchY * 0.8);
+        ctx.stroke();
+      }
+    } else {
+      // Separation phase - draw two cells moving apart
+      const sepProgress = (progress - stretchPhaseEnd) / (1 - stretchPhaseEnd);
+      const separation = sepProgress * entity.radius * 1.5;
+
+      // Left cell (original) stays in place
+      ctx.beginPath();
+      ctx.arc(-separation, 0, entity.radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Right cell (new) moves away
+      ctx.beginPath();
+      ctx.arc(entity.radius * 1.2 + separation, 0, entity.radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Subtle glow effect
+    const glowIntensity = 0.2 + Math.sin(progress * Math.PI * 4) * 0.1;
+    ctx.strokeStyle = `rgba(100, 200, 255, ${glowIntensity * (1 - progress * 0.5)})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, entity.radius * (1.5 + progress * 0.5), 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  // Draw bubble shield if active
+  if (entity.bubbleShieldActive && entity.hasProtector) {
+    const shieldRadius = entity.radius * 4; // Big enough for ~7 cells
+    const pulseTime = Date.now() / 1000;
+    const pulse = Math.sin(pulseTime * 2) * 0.1 + 1;
+
+    ctx.save();
+    ctx.translate(x, y);
+
+    // Outer shield ring
+    ctx.strokeStyle = `rgba(100, 200, 255, ${0.4 + Math.sin(pulseTime * 3) * 0.1})`;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(0, 0, shieldRadius * pulse, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Inner glow
+    const gradient = ctx.createRadialGradient(0, 0, shieldRadius * 0.8, 0, 0, shieldRadius);
+    gradient.addColorStop(0, 'rgba(100, 200, 255, 0)');
+    gradient.addColorStop(0.7, 'rgba(100, 200, 255, 0.05)');
+    gradient.addColorStop(1, 'rgba(100, 200, 255, 0.15)');
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(0, 0, shieldRadius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
 
   // Draw hibernation visuals
   if (entity.isHibernating && entity.hibernationStartTime) {

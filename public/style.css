@@ -50,7 +50,62 @@ body {
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
 }
 
-#nameInput {
+/* Chat display at top of screen */
+.chat-display {
+  position: fixed;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+  max-width: 600px;
+  width: 90%;
+}
+
+.chat-message {
+  background: rgba(10, 14, 26, 0.75);
+  backdrop-filter: blur(8px);
+  padding: 6px 14px;
+  border-radius: 16px;
+  color: white;
+  font-size: 14px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  animation: chatFadeIn 0.3s ease-out, chatFadeOut 0.5s ease-in 4.5s forwards;
+  max-width: 100%;
+  word-wrap: break-word;
+}
+
+.chat-message .chat-name {
+  color: #7dd3fc;
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+@keyframes chatFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes chatFadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+#chatInput {
   padding: 10px 16px;
   border: 2px solid rgba(255, 255, 255, 0.3);
   border-radius: 8px;
@@ -63,11 +118,11 @@ body {
   min-width: 250px;
 }
 
-#nameInput::placeholder {
+#chatInput::placeholder {
   color: rgba(255, 255, 255, 0.6);
 }
 
-#nameInput:focus {
+#chatInput:focus {
   background: rgba(10, 14, 26, 0.95);
   border-color: rgba(255, 255, 255, 0.6);
 }
@@ -645,30 +700,10 @@ body {
 .sub-branch-lines {
   position: absolute;
   top: 8px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: calc(100% - 40px);
+  left: 0;
+  right: 0;
   height: 2px;
   background: rgba(100, 200, 150, 0.5);
-}
-
-/* Vertical drops from horizontal to each sub-branch */
-.sub-branch-lines::before,
-.sub-branch-lines::after {
-  content: '';
-  position: absolute;
-  width: 2px;
-  height: 15px;
-  background: rgba(100, 200, 150, 0.5);
-  top: 2px;
-}
-
-.sub-branch-lines::before {
-  left: 0;
-}
-
-.sub-branch-lines::after {
-  right: 0;
 }
 
 /* Connector from parent node down to the horizontal split */
@@ -687,6 +722,19 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
+  position: relative;
+}
+
+/* Each sub-branch has its own centered vertical connector */
+.sub-branch::before {
+  content: '';
+  position: absolute;
+  top: -17px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 17px;
+  background: rgba(100, 200, 150, 0.5);
 }
 
 /* Individual Tech Node */
@@ -731,6 +779,57 @@ body {
 .tech-node.locked .tech-desc,
 .tech-node.locked .tech-effect {
   opacity: 0.35;
+}
+
+/* Branch-locked state (mutually exclusive columns - red tint) */
+.tech-node.branch-locked .tech-node-inner {
+  background: linear-gradient(135deg, rgba(45, 25, 30, 0.9) 0%, rgba(30, 15, 20, 0.9) 100%);
+  border-color: rgba(120, 50, 60, 0.5);
+}
+
+.tech-node.branch-locked:hover .tech-node-inner {
+  background: linear-gradient(135deg, rgba(50, 30, 35, 0.9) 0%, rgba(35, 20, 25, 0.9) 100%);
+  border-color: rgba(140, 60, 70, 0.5);
+  transform: none;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.tech-node.branch-locked .tech-icon,
+.tech-node.branch-locked .tech-name,
+.tech-node.branch-locked .tech-desc,
+.tech-node.branch-locked .tech-effect {
+  opacity: 0.3;
+}
+
+.tech-node.branch-locked .tech-cost {
+  color: rgba(180, 80, 90, 0.8);
+}
+
+/* Branch disabled container (visual overlay) */
+.branch.branch-disabled {
+  position: relative;
+}
+
+.branch.branch-disabled::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(60, 20, 30, 0.15);
+  pointer-events: none;
+  border-radius: 8px;
+}
+
+.branch.branch-disabled .branch-line {
+  opacity: 0.3;
+  background: rgba(120, 50, 60, 0.5) !important;
+}
+
+.branch.branch-disabled .branch-connector {
+  opacity: 0.3;
 }
 
 /* Unaffordable state (unlocked but can't afford - lighter gray) */
@@ -951,13 +1050,26 @@ body {
   display: none !important;
 }
 
-/* Cell Tech Tree - 3 branch layout */
+/* Cell Tech Tree - 3 main branches (Defense, Speed, Attack) */
+/* Each branch is 220px with 80px gap = centers at -300px, 0, +300px from center */
 .cell-connector {
-  width: 600px; /* 220px branch + 80px gap + 220px branch + 80px gap = 600px center-to-center */
+  width: 600px; /* Spans from Defense center to Attack center */
+}
+
+/* Middle connector for Speed branch (center branch) */
+.middle-connector {
+  position: absolute;
+  left: 50%;
+  top: 2px;
+  width: 2px;
+  height: 18px;
+  background: rgba(100, 150, 220, 0.5);
+  transform: translateX(-50%);
+  z-index: 0;
 }
 
 .cell-branches {
-  gap: 80px; /* Tighter gap for 3 branches */
+  gap: 80px; /* Gap between branches */
 }
 
 /* All cell branches same width for symmetric centering */
@@ -966,18 +1078,18 @@ body {
 }
 
 /* Cell tech node styling - blue theme */
-.tech-node.cell-tech .tech-node-inner {
+.tech-node.cell-tech:not(.locked):not(.fog) .tech-node-inner {
   background: linear-gradient(135deg, rgba(40, 60, 90, 0.9) 0%, rgba(25, 40, 65, 0.9) 100%);
   border-color: rgba(100, 150, 220, 0.6);
 }
 
-.tech-node.cell-tech:hover .tech-node-inner {
+.tech-node.cell-tech:not(.locked):not(.fog):hover .tech-node-inner {
   background: linear-gradient(135deg, rgba(50, 75, 110, 0.95) 0%, rgba(35, 55, 85, 0.95) 100%);
   border-color: rgba(120, 180, 255, 0.9);
   box-shadow: 0 0 15px rgba(100, 150, 220, 0.4);
 }
 
-.tech-node.cell-tech .tech-effect {
+.tech-node.cell-tech:not(.locked):not(.fog) .tech-effect {
   color: rgba(150, 200, 255, 0.9);
 }
 
@@ -995,30 +1107,50 @@ body {
 #cellTechTree .root-connector,
 #cellTechTree .branch-connector,
 #cellTechTree .sub-branch-lines,
-#cellTechTree .sub-branches::before {
+#cellTechTree .sub-branches::before,
+#cellTechTree .sub-branch::before {
   background: rgba(100, 150, 220, 0.5);
 }
 
 #cellTechTree .root-connector::before,
-#cellTechTree .root-connector::after,
-#cellTechTree .sub-branch-lines::before,
-#cellTechTree .sub-branch-lines::after {
+#cellTechTree .root-connector::after {
   background: rgba(100, 150, 220, 0.5);
 }
 
+/* Defense branch - blue accent (matches cell-tech default but brighter) */
+.defense-branch .tech-node:not(.locked):not(.fog) .tech-node-inner {
+  background: linear-gradient(135deg, rgba(45, 70, 110, 0.9) 0%, rgba(30, 50, 85, 0.9) 100%);
+  border-color: rgba(100, 150, 220, 0.7);
+}
+
+.defense-branch .tech-node:not(.locked):not(.fog):hover .tech-node-inner {
+  background: linear-gradient(135deg, rgba(55, 85, 130, 0.95) 0%, rgba(40, 65, 105, 0.95) 100%);
+  border-color: rgba(130, 180, 255, 0.9);
+  box-shadow: 0 0 15px rgba(100, 150, 220, 0.4);
+}
+
+.defense-branch .tech-node:not(.locked):not(.fog) .tech-effect {
+  color: rgba(150, 200, 255, 0.9);
+}
+
+.defense-branch .tech-node.researched .tech-node-inner {
+  background: linear-gradient(135deg, rgba(60, 100, 150, 0.95) 0%, rgba(45, 80, 125, 0.95) 100%);
+  border-color: rgba(150, 200, 255, 0.8);
+}
+
 /* Speed branch - cyan accent */
-.speed-branch .tech-node .tech-node-inner {
+.speed-branch .tech-node:not(.locked):not(.fog) .tech-node-inner {
   background: linear-gradient(135deg, rgba(40, 80, 90, 0.9) 0%, rgba(25, 55, 65, 0.9) 100%);
   border-color: rgba(100, 200, 200, 0.6);
 }
 
-.speed-branch .tech-node:hover .tech-node-inner {
+.speed-branch .tech-node:not(.locked):not(.fog):hover .tech-node-inner {
   background: linear-gradient(135deg, rgba(50, 100, 110, 0.95) 0%, rgba(35, 75, 85, 0.95) 100%);
   border-color: rgba(120, 220, 220, 0.9);
   box-shadow: 0 0 15px rgba(100, 200, 200, 0.4);
 }
 
-.speed-branch .tech-node .tech-effect {
+.speed-branch .tech-node:not(.locked):not(.fog) .tech-effect {
   color: rgba(150, 230, 230, 0.9);
 }
 
@@ -1028,18 +1160,18 @@ body {
 }
 
 /* Offense branch - orange/red accent */
-.offense-branch .tech-node .tech-node-inner {
+.offense-branch .tech-node:not(.locked):not(.fog) .tech-node-inner {
   background: linear-gradient(135deg, rgba(90, 60, 40, 0.9) 0%, rgba(65, 40, 25, 0.9) 100%);
   border-color: rgba(220, 150, 100, 0.6);
 }
 
-.offense-branch .tech-node:hover .tech-node-inner {
+.offense-branch .tech-node:not(.locked):not(.fog):hover .tech-node-inner {
   background: linear-gradient(135deg, rgba(110, 75, 50, 0.95) 0%, rgba(85, 55, 35, 0.95) 100%);
   border-color: rgba(255, 180, 120, 0.9);
   box-shadow: 0 0 15px rgba(220, 150, 100, 0.4);
 }
 
-.offense-branch .tech-node .tech-effect {
+.offense-branch .tech-node:not(.locked):not(.fog) .tech-effect {
   color: rgba(255, 200, 150, 0.9);
 }
 
@@ -1237,4 +1369,280 @@ body {
     height: 85%;
     padding: 15px;
   }
+}
+
+/* ===== Login System Styles ===== */
+
+/* User status in header */
+.user-status {
+  display: inline-block;
+  margin-left: 15px;
+  vertical-align: middle;
+}
+
+.auth-btn {
+  padding: 8px 16px;
+  background: linear-gradient(135deg, rgba(60, 100, 160, 0.9) 0%, rgba(40, 70, 120, 0.9) 100%);
+  border: 1px solid rgba(100, 150, 220, 0.5);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.auth-btn:hover {
+  background: linear-gradient(135deg, rgba(70, 120, 180, 0.95) 0%, rgba(50, 85, 140, 0.95) 100%);
+  border-color: rgba(120, 170, 240, 0.7);
+}
+
+.user-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: rgba(30, 50, 80, 0.8);
+  border: 1px solid rgba(100, 150, 220, 0.4);
+  border-radius: 6px;
+}
+
+.user-info .username {
+  color: #8bc4ff;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.logout-btn {
+  padding: 4px 10px;
+  background: rgba(180, 60, 60, 0.6);
+  border: 1px solid rgba(200, 100, 100, 0.4);
+  border-radius: 4px;
+  color: #ffaaaa;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.logout-btn:hover {
+  background: rgba(200, 70, 70, 0.8);
+  border-color: rgba(220, 120, 120, 0.6);
+}
+
+/* Login Modal */
+.login-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  backdrop-filter: blur(5px);
+}
+
+.login-modal.hidden {
+  display: none;
+}
+
+.login-container {
+  width: 400px;
+  max-width: 90vw;
+  background: linear-gradient(180deg, rgba(25, 35, 55, 0.98) 0%, rgba(15, 22, 35, 0.98) 100%);
+  border: 1px solid rgba(100, 150, 220, 0.4);
+  border-radius: 12px;
+  padding: 30px;
+  position: relative;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.login-close-btn {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  width: 30px;
+  height: 30px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 50%;
+  color: #9eb3cc;
+  font-size: 20px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-close-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.login-container h2 {
+  color: #fff;
+  font-size: 24px;
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+/* Login Tabs */
+.login-tabs {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 25px;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 5px;
+  border-radius: 8px;
+}
+
+.login-tab {
+  flex: 1;
+  padding: 10px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: #9eb3cc;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.login-tab:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.login-tab.active {
+  background: rgba(60, 100, 160, 0.6);
+  color: #fff;
+}
+
+/* Login Form */
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.login-form.hidden {
+  display: none;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.form-group label {
+  color: #9eb3cc;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.form-group input {
+  padding: 12px 15px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(100, 150, 220, 0.3);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: rgba(100, 150, 220, 0.6);
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.form-group input::placeholder {
+  color: rgba(158, 179, 204, 0.5);
+}
+
+.form-error {
+  color: #ff6b6b;
+  font-size: 13px;
+  min-height: 20px;
+  text-align: center;
+}
+
+.login-submit-btn {
+  padding: 14px;
+  background: linear-gradient(135deg, rgba(60, 140, 100, 0.9) 0%, rgba(40, 100, 70, 0.9) 100%);
+  border: 1px solid rgba(100, 200, 150, 0.5);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-top: 10px;
+}
+
+.login-submit-btn:hover {
+  background: linear-gradient(135deg, rgba(70, 160, 115, 0.95) 0%, rgba(50, 120, 85, 0.95) 100%);
+  border-color: rgba(120, 220, 170, 0.7);
+}
+
+.login-submit-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Benefits section */
+.login-benefits {
+  margin-top: 25px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(100, 150, 220, 0.2);
+}
+
+.login-benefits p {
+  color: #9eb3cc;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+.login-benefits ul {
+  list-style: none;
+  padding-left: 0;
+}
+
+.login-benefits li {
+  color: rgba(158, 179, 204, 0.8);
+  font-size: 12px;
+  padding: 5px 0;
+  padding-left: 20px;
+  position: relative;
+}
+
+.login-benefits li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: rgba(100, 200, 150, 0.8);
+}
+
+/* Save indicator */
+.save-indicator {
+  position: fixed;
+  top: 70px;
+  right: 20px;
+  padding: 8px 15px;
+  background: rgba(60, 140, 100, 0.8);
+  border: 1px solid rgba(100, 200, 150, 0.5);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 12px;
+  opacity: 0;
+  transform: translateY(-10px);
+  transition: all 0.3s ease;
+  z-index: 1001;
+}
+
+.save-indicator.show {
+  opacity: 1;
+  transform: translateY(0);
 }

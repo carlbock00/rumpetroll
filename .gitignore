@@ -2,3 +2,8 @@ node_modules/
 players.json
 npm-debug.log
 .DS_Store
+
+# SQLite database
+*.db
+rumpetroll.db
+*.db

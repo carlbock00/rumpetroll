@@ -9,9 +9,15 @@
 <body>
   <canvas id="gameCanvas"></canvas>
 
+  <!-- Chat display area -->
+  <div id="chatDisplay" class="chat-display"></div>
+
   <!-- Overlaid UI elements -->
   <div class="overlay-top">
-    <input type="text" id="nameInput" placeholder="Enter your name..." maxlength="20">
+    <input type="text" id="chatInput" placeholder="Press Enter to chat..." maxlength="100">
+    <div class="user-status" id="userStatus">
+      <button id="loginBtn" class="auth-btn">Login</button>
+    </div>
   </div>
 
   <div class="overlay-bottom">
@@ -22,6 +28,7 @@
   <div id="selectionMenu" class="selection-menu hidden">
     <div class="menu-item" id="upgradeBtn">Upgrade</div>
     <div class="menu-item hidden" id="supportBtn">Support</div>
+    <div class="menu-item hidden" id="shieldBtn">Shield</div>
     <div class="menu-item hidden" id="hibernateBtn">Hibernate</div>
   </div>
 
@@ -202,9 +209,10 @@
           <h1 class="panel-title">Cell Technology</h1>
 
           <div class="tech-tree-branch">
-            <!-- Root - splits into Defense and Speed -->
+            <!-- Root - splits into Defense, Speed, and Offense -->
             <div class="tree-root">
               <div class="root-connector cell-connector"></div>
+              <div class="middle-connector"></div>
             </div>
 
             <!-- Three main branches -->
@@ -250,6 +258,18 @@
                         <div class="tech-cost"><span id="cellGolgiCost">18</span> food</div>
                       </div>
                     </div>
+
+                    <div class="branch-connector"></div>
+
+                    <div class="tech-node cell-tech locked" id="cellTechProtector" data-type="cellProtector" data-level="4">
+                      <div class="tech-node-inner">
+                        <div class="tech-icon">⛨</div>
+                        <div class="tech-name">Protector</div>
+                        <div class="tech-desc">Guardian shield</div>
+                        <div class="tech-effect">Bubble shield ability</div>
+                        <div class="tech-cost"><span id="cellProtectorCost">25</span> food</div>
+                      </div>
+                    </div>
                   </div>
 
                   <!-- Storage sub-branch -->
@@ -285,6 +305,18 @@
                         <div class="tech-desc">Sugar stockpile</div>
                         <div class="tech-effect">+20 capacity</div>
                         <div class="tech-cost"><span id="cellGlycogenCost">15</span> food</div>
+                      </div>
+                    </div>
+
+                    <div class="branch-connector"></div>
+
+                    <div class="tech-node cell-tech locked" id="cellTechHibernate" data-type="cellHibernate" data-level="4">
+                      <div class="tech-node-inner">
+                        <div class="tech-icon">💤</div>
+                        <div class="tech-name">Hibernate</div>
+                        <div class="tech-desc">Deep sleep ability</div>
+                        <div class="tech-effect">Birth offspring</div>
+                        <div class="tech-cost"><span id="cellHibernateCost">20</span> food</div>
                       </div>
                     </div>
                   </div>
@@ -367,6 +399,18 @@
                     <div class="tech-cost"><span id="cellPredatorCost">18</span> food</div>
                   </div>
                 </div>
+
+                <div class="branch-connector"></div>
+
+                <div class="tech-node cell-tech locked" id="cellTechSword" data-type="cellSword" data-level="4">
+                  <div class="tech-node-inner">
+                    <div class="tech-icon">⚔</div>
+                    <div class="tech-name">Sword</div>
+                    <div class="tech-desc">Piercing blade</div>
+                    <div class="tech-effect">+25 damage, front spike</div>
+                    <div class="tech-cost"><span id="cellSwordCost">25</span> food</div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -379,6 +423,7 @@
           <h1 class="panel-title">Evolution</h1>
 
           <div class="evolution-options centered">
+            <!-- Mitosis - Transform into Cell (for tadpoles) -->
             <div class="evolution-option locked" id="techMitosis" data-type="transform">
               <div class="evolution-icon">❋</div>
               <div class="evolution-content">
@@ -393,6 +438,38 @@
                 <div class="evolution-cost"><span id="mitosisCost">20</span> food + 1 nucleotide</div>
               </div>
             </div>
+
+            <!-- Hibernate - Cell only -->
+            <div class="evolution-option hidden" id="techHibernate" data-type="hibernate">
+              <div class="evolution-icon">💤</div>
+              <div class="evolution-content">
+                <div class="evolution-name">Hibernate</div>
+                <div class="evolution-desc">Enter deep sleep to birth a new tadpole</div>
+                <div class="evolution-stats">
+                  <span>• Immobile during hibernation</span>
+                  <span>• Creates offspring after 30s</span>
+                  <span>• Can be cancelled</span>
+                </div>
+                <div class="evolution-requires">Cell only</div>
+                <div class="evolution-cost">Free</div>
+              </div>
+            </div>
+
+            <!-- Split - Cell only -->
+            <div class="evolution-option hidden" id="techSplit" data-type="split">
+              <div class="evolution-icon">✂</div>
+              <div class="evolution-content">
+                <div class="evolution-name">Split</div>
+                <div class="evolution-desc">Divide into two smaller cells</div>
+                <div class="evolution-stats">
+                  <span>• Creates a copy of yourself</span>
+                  <span>• Both cells start at half health</span>
+                  <span>• Keeps upgrades</span>
+                </div>
+                <div class="evolution-requires">Cell only</div>
+                <div class="evolution-cost"><span id="splitCost">15</span> food</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -404,6 +481,62 @@
       <span id="healthUpgradeCost" class="hidden">5</span>
       <span id="strengthUpgradeCost" class="hidden">5</span>
       <span id="capacityUpgradeCost" class="hidden">3</span>
+    </div>
+  </div>
+
+  <!-- Login Modal -->
+  <div id="loginModal" class="login-modal hidden">
+    <div class="login-container">
+      <button class="login-close-btn" id="loginCloseBtn">&times;</button>
+      <h2 id="loginTitle">Login</h2>
+
+      <div class="login-tabs">
+        <button class="login-tab active" id="tabLogin">Login</button>
+        <button class="login-tab" id="tabRegister">Register</button>
+      </div>
+
+      <form id="loginForm" class="login-form">
+        <div class="form-group">
+          <label for="loginEmail">Email</label>
+          <input type="email" id="loginEmail" required placeholder="your@email.com">
+        </div>
+        <div class="form-group">
+          <label for="loginPassword">Password</label>
+          <input type="password" id="loginPassword" required placeholder="Password" minlength="6">
+        </div>
+        <div class="form-error" id="loginError"></div>
+        <button type="submit" class="login-submit-btn">Login</button>
+      </form>
+
+      <form id="registerForm" class="login-form hidden">
+        <div class="form-group">
+          <label for="registerUsername">Username</label>
+          <input type="text" id="registerUsername" required placeholder="Your username" minlength="2" maxlength="20">
+        </div>
+        <div class="form-group">
+          <label for="registerEmail">Email</label>
+          <input type="email" id="registerEmail" required placeholder="your@email.com">
+        </div>
+        <div class="form-group">
+          <label for="registerPassword">Password</label>
+          <input type="password" id="registerPassword" required placeholder="At least 6 characters" minlength="6">
+        </div>
+        <div class="form-group">
+          <label for="registerConfirm">Confirm Password</label>
+          <input type="password" id="registerConfirm" required placeholder="Confirm password" minlength="6">
+        </div>
+        <div class="form-error" id="registerError"></div>
+        <button type="submit" class="login-submit-btn">Create Account</button>
+      </form>
+
+      <div class="login-benefits">
+        <p>Benefits of creating an account:</p>
+        <ul>
+          <li>Save your progress across sessions</li>
+          <li>Track your stats and achievements</li>
+          <li>Resume your creatures where you left off</li>
+        </ul>
+      </div>
     </div>
   </div>
 
