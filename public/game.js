@@ -47,6 +47,7 @@ const registerError = document.getElementById('registerError');
 let currentUser = null;
 let lastSaveTime = 0;
 const SAVE_INTERVAL = 30000; // Save every 30 seconds
+let sessionCheckComplete = false; // Flag to track if session check is done
 
 // Check session on load
 async function checkSession() {
@@ -62,6 +63,8 @@ async function checkSession() {
     }
   } catch (error) {
     console.error('Session check failed:', error);
+  } finally {
+    sessionCheckComplete = true;
   }
 }
 
@@ -906,8 +909,52 @@ socket.on('disconnect', () => {
   statusEl.className = 'disconnected';
 });
 
-socket.on('init', (data) => {
+socket.on('init', async (data) => {
   myId = data.id;
+
+  // Wait for session check to complete (with timeout)
+  let waitCount = 0;
+  while (!sessionCheckComplete && waitCount < 50) {
+    await new Promise(resolve => setTimeout(resolve, 50));
+    waitCount++;
+  }
+
+  // If we already have creatures loaded from saved progress, don't overwrite them
+  if (myTadpoles.length > 0) {
+    console.log('Keeping loaded creatures, skipping default spawn');
+
+    // Use username if logged in
+    if (currentUser) {
+      myTadpoles.forEach(tad => {
+        tad.name = currentUser.username;
+      });
+      socket.emit('setName', currentUser.username);
+    }
+
+    // Initialize particles around first creature
+    const firstTad = myTadpoles[0];
+    initializeParticles(firstTad.x, firstTad.y);
+
+    // Initialize tails for loaded creatures
+    myTadpoles.forEach(tad => {
+      if (tad.type === 'tadpole') {
+        initializeTadpole(tad);
+      } else if (tad.type === 'cell') {
+        tad.angle = tad.angle || 0;
+        tad.wiggleOffset = tad.wiggleOffset || Math.random() * Math.PI * 2;
+        if (tad.hasCellTail) {
+          initializeCellTail(tad);
+        }
+      }
+    });
+
+    // Select the first creature
+    selectedTadpoles.clear();
+    selectedTadpoles.add(firstTad.id);
+    updateSelectionCount();
+    return;
+  }
+
   const player = data.player;
   player.renderX = player.x;
   player.renderY = player.y;
