@@ -214,13 +214,9 @@ async function saveProgressToServer() {
   }
 }
 
-// Load progress from server
+// Load progress from server (silently loads when logged in)
 function loadProgressFromServer(progress) {
   if (!progress || !progress.creature_data || progress.creature_data.length === 0) return;
-
-  // Ask user if they want to load saved progress
-  const loadSaved = confirm('Found saved progress. Load your previous creatures?');
-  if (!loadSaved) return;
 
   // Clear current creatures
   myTadpoles = [];
@@ -266,7 +262,6 @@ function loadProgressFromServer(progress) {
   });
 
   updateSelectionCount();
-  showSaveIndicator('Progress loaded!');
 }
 
 // Show save indicator
