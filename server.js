@@ -1062,21 +1062,47 @@ io.on('connection', (socket) => {
     // If player was converted to NPC, re-add them to players
     if (!players[socket.id]) {
       console.log(`Player ${socket.id} tab became visible, re-adding to players`);
-      players[socket.id] = {
-        id: socket.id,
-        x: (Math.random() - 0.5) * 3000,
-        y: (Math.random() - 0.5) * 3000,
-        vx: 0,
-        vy: 0,
-        color: '#FFFFFF',
-        radius: 8,
-        score: 0,
-        name: `Player${Math.floor(Math.random() * 1000)}`,
-        lastMoveTime: Date.now(),
-        isIdle: false,
-        isInactive: false,
-        type: 'tadpole'
-      };
+
+      // Check if they exist as an NPC and preserve their state
+      const existingNPC = npcs[socket.id];
+      if (existingNPC) {
+        players[socket.id] = {
+          id: socket.id,
+          x: existingNPC.x,
+          y: existingNPC.y,
+          vx: existingNPC.vx || 0,
+          vy: existingNPC.vy || 0,
+          color: existingNPC.type === 'cell' ? '#4a5f7f' : '#FFFFFF',
+          radius: existingNPC.radius,
+          score: 0,
+          name: `Player${Math.floor(Math.random() * 1000)}`,
+          lastMoveTime: Date.now(),
+          isIdle: false,
+          isInactive: false,
+          type: existingNPC.type || 'tadpole',
+          food: existingNPC.food || 0,
+          angle: existingNPC.angle || 0,
+          wiggleOffset: existingNPC.wiggleOffset || Math.random() * Math.PI * 2
+        };
+        // Remove from NPCs
+        delete npcs[socket.id];
+      } else {
+        players[socket.id] = {
+          id: socket.id,
+          x: (Math.random() - 0.5) * 3000,
+          y: (Math.random() - 0.5) * 3000,
+          vx: 0,
+          vy: 0,
+          color: '#FFFFFF',
+          radius: 8,
+          score: 0,
+          name: `Player${Math.floor(Math.random() * 1000)}`,
+          lastMoveTime: Date.now(),
+          isIdle: false,
+          isInactive: false,
+          type: 'tadpole'
+        };
+      }
       // Notify all clients this player is active again
       io.emit('playerActive', { id: socket.id });
       // Broadcast player joined
@@ -1197,6 +1223,55 @@ setInterval(() => {
   }
 }, 5000); // Check every 5 seconds
 
+// Helper function to convert a player to an NPC on the server
+function convertPlayerToNPC(playerId, player, reason) {
+  console.log(`Converting player ${playerId} (${player.name}) to NPC (${reason})`);
+
+  const wasCell = player.type === 'cell';
+
+  // Create NPC from player data
+  const npc = {
+    id: playerId,
+    x: player.x,
+    y: player.y,
+    vx: player.vx || 0,
+    vy: player.vy || 0,
+    color: '#505050',
+    radius: wasCell ? NPC_CELL_RADIUS : NPC_TADPOLE_RADIUS,
+    name: '',
+    health: wasCell ? NPC_CELL_HEALTH : NPC_TADPOLE_HEALTH,
+    maxHealth: wasCell ? NPC_CELL_HEALTH : NPC_TADPOLE_HEALTH,
+    lastHit: 0,
+    lastAttack: 0,
+    type: wasCell ? 'cell' : 'tadpole',
+    moveTarget: null,
+    targetChangeTime: Date.now(),
+    provoked: false,
+    provokedBy: null,
+    attackTarget: null,
+    food: player.food || 0,
+    angle: player.angle || 0,
+    wiggleOffset: player.wiggleOffset || Math.random() * Math.PI * 2,
+    chaseEnergy: 100,
+    maxChaseEnergy: 100,
+    isTired: false,
+    tiredStartTime: 0,
+    isSprinting: false
+  };
+
+  // Add to server's npcs object so they can move and be attacked
+  npcs[playerId] = npc;
+
+  // Notify clients
+  io.emit('playerIdle', {
+    id: playerId,
+    player: player
+  });
+
+  // Remove from players
+  delete players[playerId];
+}
+
 // Check for idle players and convert them to NPCs
 setInterval(() => {
   const now = Date.now();
@@ -1208,24 +1283,11 @@ setInterval(() => {
 
     // Convert inactive players (tab hidden) to NPCs
     if (player.isInactive && player.inactiveTime && now - player.inactiveTime > inactiveTimeout) {
-      console.log(`Converting inactive player ${playerId} to NPC (tab hidden)`);
-      io.emit('playerIdle', {
-        id: playerId,
-        player: player
-      });
-      // Remove from players list to stop broadcasting their updates
-      delete players[playerId];
+      convertPlayerToNPC(playerId, player, 'tab hidden');
     }
     // Also check for idle players based on no movement
     else if (!player.isIdle && !player.isInactive && now - player.lastMoveTime > idleTimeout) {
-      // Player is idle, convert to NPC for all clients (emit only once)
-      console.log(`Converting idle player ${playerId} (${player.name}) to NPC (no movement)`);
-      io.emit('playerIdle', {
-        id: playerId,
-        player: player
-      });
-      // Remove from players list to stop broadcasting their updates
-      delete players[playerId];
+      convertPlayerToNPC(playerId, player, 'no movement');
     }
   }
 }, 2000); // Check every 2 seconds (faster checking)
