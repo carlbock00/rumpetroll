@@ -110,7 +110,6 @@ async function login(email, password) {
       if (data.progress?.creature_data) {
         loadProgressFromServer(data.progress);
       }
-      showSaveIndicator('Logged in!');
     } else {
       loginError.textContent = data.error || 'Login failed';
     }
@@ -134,7 +133,6 @@ async function register(username, email, password) {
       currentUser = data.user;
       loginModal.classList.add('hidden');
       updateUserUI();
-      showSaveIndicator('Account created!');
     } else {
       registerError.textContent = data.error || 'Registration failed';
     }
