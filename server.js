@@ -1450,12 +1450,8 @@ io.on('connection', (socket) => {
       // Broadcast food removal to all clients
       io.emit('foodEaten', { foodId, playerId: socket.id, score: players[socket.id].score });
 
-      // Spawn new food to replace it
-      generateFood(1);
-
-      // Send new food to all clients
-      const newFoodId = `food_${foodIdCounter - 1}`;
-      io.emit('foodSpawned', food[newFoodId]);
+      // NOTE: Do NOT spawn replacement food here - the periodic food density system handles spawning
+      // Spawning here was causing double food spawns
     }
   });
 

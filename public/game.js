@@ -1578,6 +1578,12 @@ socket.on('npcs', (serverNpcs) => {
   // Initial NPC state from server
   npcs = {};
   Object.values(serverNpcs).forEach(npcData => {
+    // Skip the current user's own idle NPCs (they should have been deleted, but just in case)
+    if (npcData.isIdlePlayer && currentUser &&
+        (npcData.name === currentUser.username || npcData.ownerName === currentUser.username)) {
+      return;
+    }
+
     const npc = { ...npcData };
     npc.renderX = npc.x;
     npc.renderY = npc.y;
@@ -1642,7 +1648,14 @@ socket.on('npcUpdate', (serverNpcs) => {
         npc.renderY = npc.y;
       }
     } else {
-      // New NPC - add it
+      // New NPC - add it (but skip if it's the current user's idle self)
+      // This prevents race conditions where old npcUpdate messages re-add deleted idle NPCs
+      if (serverNpc.isIdlePlayer && currentUser &&
+          (serverNpc.name === currentUser.username || serverNpc.ownerName === currentUser.username)) {
+        // Skip - this is the current user's idle NPC that should have been deleted
+        return;
+      }
+
       const npc = { ...serverNpc };
       npc.renderX = npc.x;
       npc.renderY = npc.y;
