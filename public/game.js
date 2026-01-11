@@ -5022,12 +5022,16 @@ function handleDeath(entity) {
     duration: 2000 // 2 seconds - slowly vanishes
   });
 
-  // Always drop exactly 1 food item on death
-  socket.emit('spawnDeathFood', {
-    x: entity.x,
-    y: entity.y,
-    count: 1
-  });
+  // Only emit spawnDeathFood for player creature deaths
+  // NPC deaths are handled server-side in handleNPCDeath - don't spawn duplicate food
+  const isPlayerCreature = myTadpoles.includes(entity);
+  if (isPlayerCreature) {
+    socket.emit('spawnDeathFood', {
+      x: entity.x,
+      y: entity.y,
+      count: 1
+    });
+  }
 
   if (myTadpoles.includes(entity)) {
     myTadpoles = myTadpoles.filter(t => t !== entity);
