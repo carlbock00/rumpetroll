@@ -164,4 +164,33 @@ router.get('/load-progress', (req, res) => {
   }
 });
 
+// Admin: Delete user by email (requires secret key)
+router.delete('/admin/user/:email', async (req, res) => {
+  const adminKey = req.headers['x-admin-key'];
+
+  // Simple secret key check - in production use environment variable
+  if (adminKey !== 'rumpetroll-admin-2024') {
+    return res.status(403).json({ success: false, error: 'Unauthorized' });
+  }
+
+  try {
+    const email = decodeURIComponent(req.params.email);
+    const user = userOps.getByEmail(email);
+
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    // Delete progress first (foreign key)
+    progressOps.delete(user.id);
+    // Delete user
+    userOps.delete(user.id);
+
+    res.json({ success: true, message: `Deleted user ${email}` });
+  } catch (error) {
+    console.error('Admin delete error:', error);
+    res.status(500).json({ success: false, error: 'Failed to delete user' });
+  }
+});
+
 module.exports = router;

@@ -123,6 +123,18 @@ const userOps = {
     return db.prepare(
       'SELECT id, email, username, created_at, last_login FROM users WHERE id = ?'
     ).get(userId);
+  },
+
+  // Get user by email
+  getByEmail(email) {
+    return db.prepare(
+      'SELECT id, email, username, created_at, last_login FROM users WHERE email = ?'
+    ).get(email.toLowerCase());
+  },
+
+  // Delete user by ID
+  delete(userId) {
+    return db.prepare('DELETE FROM users WHERE id = ?').run(userId);
   }
 };
 
@@ -209,6 +221,11 @@ const progressOps = {
       stats.highestEvolution,
       userId
     );
+  },
+
+  // Delete progress by user ID
+  delete(userId) {
+    return db.prepare('DELETE FROM player_progress WHERE user_id = ?').run(userId);
   }
 };
 
