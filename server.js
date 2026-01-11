@@ -561,22 +561,25 @@ function handleNPCDeath(npc) {
     return;
   }
 
-  // Each NPC drops exactly 1 food item
-  // Cells drop 1 nucleotide, Tadpoles drop 1 plankton
-  const id = `food_${foodIdCounter++}`;
-  const angle = Math.random() * Math.PI * 2;
-  const dist = 15 + Math.random() * 15;
+  // Cells drop 1 nucleotide, Tadpoles drop random plankton (2-5)
+  const foodCount = wasCell ? 1 : 2 + Math.floor(Math.random() * 4); // 1 for cells, 2-5 for tadpoles
 
-  food[id] = {
-    id,
-    x: deathX + Math.cos(angle) * dist,
-    y: deathY + Math.sin(angle) * dist,
-    radius: wasCell ? 6 : 4,
-    type: wasCell ? 'nucleotide' : 'plankton',
-    spawnTime: Date.now(),
-    ttl: wasCell ? 90000 + Math.random() * 90000 : 30000 + Math.random() * 60000
-  };
-  io.emit('foodSpawned', food[id]);
+  for (let i = 0; i < foodCount; i++) {
+    const id = `food_${foodIdCounter++}`;
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 15 + Math.random() * 15;
+
+    food[id] = {
+      id,
+      x: deathX + Math.cos(angle) * dist,
+      y: deathY + Math.sin(angle) * dist,
+      radius: wasCell ? 6 : 4,
+      type: wasCell ? 'nucleotide' : 'plankton',
+      spawnTime: Date.now(),
+      ttl: wasCell ? 90000 + Math.random() * 90000 : 30000 + Math.random() * 60000
+    };
+    io.emit('foodSpawned', food[id]);
+  }
 
   // Broadcast death effect
   io.emit('npcDied', { id: npc.id, x: deathX, y: deathY, radius: npc.radius });
