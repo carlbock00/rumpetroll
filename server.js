@@ -749,7 +749,7 @@ setInterval(() => {
 }, 5000); // Check every 5 seconds
 
 // Food expiration and respawn - maintain constant food density around players
-const TARGET_FOOD_COUNT = 19;
+const TARGET_FOOD_COUNT = 29; // Increased 50% from 19
 const FOOD_SPAWN_RADIUS = 1000;
 const FOOD_DESPAWN_RADIUS = 1500;
 // Spawn/decay rate reduced by 80% (5x slower) while maintaining same equilibrium density
@@ -853,7 +853,7 @@ function generateFood(count) {
 // Clear all existing food and initialize
 food = {}; // Clear all existing food
 foodIdCounter = 0; // Reset counter
-generateFood(38); // Start with reasonable amount of food
+generateFood(57); // Start with reasonable amount of food (increased 50%)
 
 // User positions storage - persists across reconnections by username
 // Also stores { diedWhileInactive: true } for users who died while inactive
@@ -1835,7 +1835,7 @@ io.on('connection', (socket) => {
     // Regenerate food
     food = {};
     foodIdCounter = 0;
-    generateFood(15); // Start with some food
+    generateFood(23); // Start with some food (increased 50%)
 
     // Reinitialize NPCs using server's NPC system
     initializeNPCs();
