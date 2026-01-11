@@ -4587,6 +4587,9 @@ function update(deltaTime = 1) {
           if (currentNucleotides < 1) {
             tad.nucleotides = 1;
             eatenThisFrame.add(foodItem.id);
+            // Delete food immediately to prevent eating same food multiple times
+            // before server confirms (race condition fix)
+            delete food[foodItem.id];
             socket.emit('eatFood', foodItem.id);
           }
         } else {
@@ -4597,6 +4600,9 @@ function update(deltaTime = 1) {
           if (currentFood < foodCapacity) {
             tad.food = currentFood + 1;
             eatenThisFrame.add(foodItem.id);
+            // Delete food immediately to prevent eating same food multiple times
+            // before server confirms (race condition fix)
+            delete food[foodItem.id];
             socket.emit('eatFood', foodItem.id);
           }
         }
