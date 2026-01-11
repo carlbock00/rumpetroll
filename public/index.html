@@ -15,6 +15,7 @@
   <!-- Overlaid UI elements -->
   <div class="overlay-top">
     <input type="text" id="chatInput" placeholder="Press Enter to chat..." maxlength="100">
+    <button id="testModeBtn" class="test-mode-btn" title="Test Mode: Infinite food, NPCs ignore you">T</button>
     <div class="user-status" id="userStatus">
       <button id="loginBtn" class="auth-btn">Login</button>
     </div>
@@ -29,13 +30,16 @@
   <div id="selectionMenu" class="selection-menu hidden">
     <div class="menu-item" id="upgradeBtn">Upgrade</div>
     <div class="menu-item hidden" id="supportBtn">Support</div>
+    <div class="menu-item hidden" id="giveFoodBtn">Give Food</div>
     <div class="menu-item hidden" id="shieldBtn">Shield</div>
+    <div class="menu-item hidden" id="farmBtn">Farm</div>
     <div class="menu-item hidden" id="hibernateBtn">Hibernate</div>
   </div>
 
   <div id="creatureList" class="creature-list"></div>
 
   <div id="statsDisplay" class="stats-display">
+    <div>Type: <span id="typeStat">Tadpole</span></div>
     <div>Health: <span id="healthStat">100</span></div>
     <div>Strength: <span id="strengthStat">50</span></div>
     <div>Food: <span id="foodStat">0</span>/<span id="foodCapacityStat">10</span></div>
@@ -437,6 +441,22 @@
                 </div>
                 <div class="evolution-requires">Requires: Nucleus</div>
                 <div class="evolution-cost"><span id="mitosisCost">20</span> food + 1 nucleotide</div>
+              </div>
+            </div>
+
+            <!-- Bacteria - Transform into Bacteria (for tadpoles) -->
+            <div class="evolution-option locked" id="techBacteria" data-type="transformBacteria">
+              <div class="evolution-icon">🦠</div>
+              <div class="evolution-content">
+                <div class="evolution-name">Prokaryosis</div>
+                <div class="evolution-desc">Transform into a Bacteria</div>
+                <div class="evolution-stats">
+                  <span>• Irregular blob shape</span>
+                  <span>• Can passively farm food</span>
+                  <span>• Slower movement</span>
+                </div>
+                <div class="evolution-requires">Requires: Nucleus</div>
+                <div class="evolution-cost"><span id="bacteriaCost">15</span> food + 1 nucleotide</div>
               </div>
             </div>
 

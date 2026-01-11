@@ -129,6 +129,26 @@ router.post('/save-progress', (req, res) => {
   }
 });
 
+// Clear progress on death (authenticated)
+router.post('/clear-progress', (req, res) => {
+  if (!req.session.userId) {
+    return res.status(401).json({ success: false, error: 'Not logged in' });
+  }
+
+  try {
+    // Clear creature data but keep stats (increment death count)
+    progressOps.save(req.session.userId, {
+      creatures: [], // Empty creatures = start fresh as tadpole
+      totalDeaths: 1 // Increment death count
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Clear progress error:', error);
+    res.status(500).json({ success: false, error: 'Failed to clear progress' });
+  }
+});
+
 // Load progress (authenticated)
 router.get('/load-progress', (req, res) => {
   if (!req.session.userId) {

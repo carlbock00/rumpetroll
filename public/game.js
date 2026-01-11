@@ -10,7 +10,10 @@ const upgradeBtn = document.getElementById('upgradeBtn');
 const supportBtn = document.getElementById('supportBtn');
 const hibernateBtn = document.getElementById('hibernateBtn');
 const shieldBtn = document.getElementById('shieldBtn');
+const farmBtn = document.getElementById('farmBtn');
+const giveFoodBtn = document.getElementById('giveFoodBtn');
 const restartBtn = document.getElementById('restartBtn');
+const typeStat = document.getElementById('typeStat');
 const healthStat = document.getElementById('healthStat');
 const strengthStat = document.getElementById('strengthStat');
 const foodStat = document.getElementById('foodStat');
@@ -36,6 +39,7 @@ const buyCapacityBtn = document.getElementById('buyCapacityBtn');
 const loginModal = document.getElementById('loginModal');
 const loginBtn = document.getElementById('loginBtn');
 const loginCloseBtn = document.getElementById('loginCloseBtn');
+const testModeBtn = document.getElementById('testModeBtn');
 const userStatus = document.getElementById('userStatus');
 const tabLogin = document.getElementById('tabLogin');
 const tabRegister = document.getElementById('tabRegister');
@@ -157,6 +161,21 @@ async function logout() {
   }
 }
 
+// Clear progress on death (so player starts fresh as tadpole)
+async function clearProgressOnDeath() {
+  if (!currentUser) return;
+
+  try {
+    await fetch('/api/auth/clear-progress', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    console.log('Progress cleared - will start as tadpole on next login');
+  } catch (error) {
+    console.error('Clear progress error:', error);
+  }
+}
+
 // Save progress to server
 async function saveProgressToServer() {
   if (!currentUser) return;
@@ -170,6 +189,11 @@ async function saveProgressToServer() {
     const creatures = myTadpoles.map(tad => ({
       type: tad.type,
       name: tad.name,
+      // Position
+      x: tad.x,
+      y: tad.y,
+      angle: tad.angle || 0,
+      // Stats
       health: tad.health,
       food: tad.food,
       nucleotides: tad.nucleotides || 0,
@@ -186,7 +210,10 @@ async function saveProgressToServer() {
       cellSpeedLevel: tad.cellSpeedLevel || 0,
       hasCellTail: tad.hasCellTail || false,
       hasProtector: tad.hasProtector || false,
-      hasSword: tad.hasSword || false
+      hasSword: tad.hasSword || false,
+      canHibernate: tad.canHibernate || false,
+      // Bacteria-specific
+      isFarming: tad.isFarming || false
     }));
 
     // Calculate highest evolution
@@ -195,6 +222,10 @@ async function saveProgressToServer() {
       if (c.type === 'cell') {
         highestEvolution = 'cell';
         break;
+      }
+      if (c.type === 'bacteria') {
+        highestEvolution = 'bacteria';
+        // Don't break - cell is considered higher evolution than bacteria
       }
     }
 
@@ -227,21 +258,43 @@ function loadProgressFromServer(progress) {
 
   // Recreate creatures from saved data
   progress.creature_data.forEach((savedTad, index) => {
+    const startX = savedTad.x !== undefined ? savedTad.x : (Math.random() - 0.5) * 500;
+    const startY = savedTad.y !== undefined ? savedTad.y : (Math.random() - 0.5) * 500;
+    // Determine color and radius based on type
+    let color = '#FFFFFF';
+    let radius = TADPOLE_RADIUS;
+    let defaultHealth = MAX_HEALTH;
+    if (savedTad.type === 'cell') {
+      color = '#4a5f7f';
+      radius = CELL_RADIUS;
+      defaultHealth = CELL_MAX_HEALTH;
+    } else if (savedTad.type === 'bacteria') {
+      color = '#7fbf7f';
+      radius = BACTERIA_RADIUS;
+      defaultHealth = BACTERIA_MAX_HEALTH;
+    }
+
     const tad = {
       id: `saved_${Date.now()}_${index}`,
-      x: (Math.random() - 0.5) * 500,
-      y: (Math.random() - 0.5) * 500,
+      // Restore exact position, or random if not saved
+      x: startX,
+      y: startY,
+      renderX: startX,
+      renderY: startY,
       vx: 0,
       vy: 0,
-      color: savedTad.type === 'cell' ? '#4a5f7f' : '#FFFFFF',
-      radius: savedTad.type === 'cell' ? CELL_RADIUS : TADPOLE_RADIUS,
+      color: color,
+      radius: radius,
       name: savedTad.name || currentUser.username,
       type: savedTad.type || 'tadpole',
-      health: savedTad.health || (savedTad.type === 'cell' ? CELL_MAX_HEALTH : MAX_HEALTH),
+      health: savedTad.health || defaultHealth,
+      maxHealth: defaultHealth,
       food: savedTad.food || 0,
       nucleotides: savedTad.nucleotides || 0,
-      angle: Math.random() * Math.PI * 2,
+      angle: savedTad.angle !== undefined ? savedTad.angle : Math.random() * Math.PI * 2,
       wiggleOffset: Math.random() * Math.PI * 2,
+      lastHit: 0,
+      lastAttack: 0,
       // Tadpole upgrades
       healthLevel: savedTad.healthLevel || 0,
       strengthLevel: savedTad.strengthLevel || 0,
@@ -255,8 +308,21 @@ function loadProgressFromServer(progress) {
       cellSpeedLevel: savedTad.cellSpeedLevel || 0,
       hasCellTail: savedTad.hasCellTail || false,
       hasProtector: savedTad.hasProtector || false,
-      hasSword: savedTad.hasSword || false
+      canBubbleShield: savedTad.hasProtector || false,
+      bubbleShieldActive: savedTad.bubbleShieldActive || false,
+      hasSword: savedTad.hasSword || false,
+      canHibernate: savedTad.canHibernate || false,
+      // Bacteria-specific
+      isFarming: savedTad.isFarming || false
     };
+
+    // Initialize type-specific properties
+    if (tad.type === 'tadpole') {
+      initializeTadpole(tad);
+    } else if (tad.type === 'bacteria') {
+      // Generate blob shape for bacteria
+      tad.blobShape = generateBlobShape();
+    }
 
     myTadpoles.push(tad);
     if (index === 0) {
@@ -597,7 +663,8 @@ const techNodes = {
   techPseudopod: { type: 'strength', level: 2, cost: 8, requires: 'techFlagellum' },
   techCytoskeleton: { type: 'strength', level: 3, cost: 12, requires: 'techPseudopod' },
   // Evolution (requires Nucleus)
-  techMitosis: { type: 'transform', level: 1, cost: 20, requires: 'techNucleus' }
+  techMitosis: { type: 'transform', level: 1, cost: 20, requires: 'techNucleus' },
+  techBacteria: { type: 'transformBacteria', level: 1, cost: 15, requires: 'techNucleus' }
 };
 
 // Cell-specific technology tree
@@ -677,6 +744,42 @@ creatureList.addEventListener('click', (e) => {
       }
     }
 
+    // If in food transfer selection mode
+    if (waitingForFoodTarget) {
+      if (tad.id === foodSourceId) {
+        // Clicking the source creature cancels selection mode
+        waitingForFoodTarget = false;
+        foodSourceId = null;
+        updateSelectionCount();
+        return;
+      } else {
+        // Clicking a valid target transfers food
+        const sourceCreature = myTadpoles.find(t => t.id === foodSourceId);
+        if (sourceCreature && sourceCreature.food > 0) {
+          // Calculate how much food can be transferred
+          const targetCapacity = tad.type === 'cell' ? CELL_FOOD_CAPACITY : getFoodCapacity(tad);
+          const availableSpace = targetCapacity - (tad.food || 0);
+          const transferAmount = Math.min(sourceCreature.food, availableSpace);
+
+          if (transferAmount > 0) {
+            // Transfer the food
+            sourceCreature.food -= transferAmount;
+            tad.food = (tad.food || 0) + transferAmount;
+            console.log(`Transferred ${transferAmount} food from creature to creature`);
+          }
+
+          waitingForFoodTarget = false;
+          foodSourceId = null;
+
+          // Select the receiving creature
+          selectedTadpoles.clear();
+          selectedTadpoles.add(tad.id);
+          updateSelectionCount();
+        }
+        return;
+      }
+    }
+
     // Normal selection behavior
     const previousSelection = new Set(selectedTadpoles);
 
@@ -743,14 +846,19 @@ let keys = {};
 let food = {};
 let selectedTadpoles = new Set(); // Set of selected tadpole IDs
 let isDead = false;
+let testMode = false; // Cheat mode: infinite food, NPCs ignore you
+let isSecondaryWindow = false; // True if this is a secondary window for same user (view-only)
 let deathEffects = []; // Array of death splat effects
 let particles = []; // Ambient floating particles
 let damageTexts = []; // Array of damage text instances
 let vanishingFood = []; // Food items that are fading out
 let waitingForSupportTarget = false; // True when selecting a creature to support
 let supportSourceId = null; // ID of creature that will do the supporting
+let waitingForFoodTarget = false; // True when selecting a creature to give food to
+let foodSourceId = null; // ID of creature giving food
 let lastCreatureCount = 0; // Track when to rebuild creature list
 let lastWaitingForSupport = false; // Track when support mode changes
+let lastWaitingForFood = false; // Track when food transfer mode changes
 let lastSelectedIds = new Set(); // Track selected IDs to detect selection changes
 
 // Cheat modes
@@ -784,6 +892,7 @@ const CAPACITY_UPGRADE_COSTS = [3, 5, 8]; // Cheaper since only 3 levels
 // Hibernation
 const HIBERNATION_DURATION = 1 * 60 * 1000; // 1 minute for testing
 const TRANSFORMATION_DURATION = 10 * 1000; // 10 seconds to transform to cell
+const BACTERIA_TRANSFORMATION_DURATION = 8 * 1000; // 8 seconds to transform to bacteria
 
 // Camera system
 let camera = {
@@ -814,6 +923,10 @@ const TADPOLE_RADIUS = 9; // Player tadpoles - smaller
 const NPC_TADPOLE_RADIUS = 11.2; // NPCs are bigger
 const CELL_RADIUS = 30; // Player cells
 const NPC_CELL_RADIUS = 40; // NPC cells are bigger than player cells
+const BACTERIA_RADIUS = 18; // Bacteria are medium-sized
+const BACTERIA_MAX_HEALTH = 60; // Bacteria are weaker
+const BACTERIA_FOOD_CAPACITY = 30; // Medium capacity
+const BACTERIA_FARM_RATE = 0.002; // Food per frame when farming (~0.12 food/sec at 60fps)
 // Combat stats - NPCs have advantage until player upgrades
 const MAX_HEALTH = 70; // Player base health (weak at start)
 const CELL_MAX_HEALTH = 120; // Player cell base health
@@ -857,6 +970,9 @@ function getFoodCapacity(tad) {
   if (tad.type === 'cell') {
     return CELL_FOOD_CAPACITY;
   }
+  if (tad.type === 'bacteria') {
+    return BACTERIA_FOOD_CAPACITY;
+  }
   // Tadpole: base + upgrade bonuses
   const capacityLevel = tad.capacityLevel || 0;
   const bonus = capacityLevel > 0 ? FOOD_CAPACITY_BONUSES[capacityLevel - 1] : 0;
@@ -876,6 +992,9 @@ function updateStatsDisplay() {
   }
 
   if (displayTad) {
+    // Show creature type
+    const typeNames = { tadpole: 'Tadpole', cell: 'Cell', bacteria: 'Bacteria' };
+    typeStat.textContent = typeNames[displayTad.type] || 'Tadpole';
     healthStat.textContent = Math.round(displayTad.health);
     strengthStat.textContent = Math.round(playerStrength);
     foodStat.textContent = displayTad.food || 0;
@@ -889,6 +1008,7 @@ function updateStatsDisplay() {
       nucleotideRow.classList.add('hidden');
     }
   } else {
+    typeStat.textContent = '-';
     healthStat.textContent = '0';
     strengthStat.textContent = '0';
     foodStat.textContent = '0';
@@ -909,8 +1029,143 @@ socket.on('disconnect', () => {
   statusEl.className = 'disconnected';
 });
 
+// Restore position from idle NPC when reconnecting
+socket.on('restorePosition', (data) => {
+  console.log(`Restoring position from idle NPC: (${data.x}, ${data.y})`);
+  if (myTadpoles.length > 0) {
+    myTadpoles.forEach(tad => {
+      tad.x = data.x;
+      tad.y = data.y;
+      tad.renderX = data.x;
+      tad.renderY = data.y;
+      tad.vx = 0;
+      tad.vy = 0;
+      // Restore protector/shield state from idle NPC
+      if (data.hasProtector !== undefined) {
+        tad.hasProtector = data.hasProtector;
+        tad.canBubbleShield = data.hasProtector;
+      }
+      if (data.bubbleShieldActive !== undefined) {
+        tad.bubbleShieldActive = data.bubbleShieldActive;
+      }
+    });
+  }
+});
+
+// Restore all creatures from idle NPCs when reconnecting
+socket.on('restoreCreatures', (data) => {
+  console.log(`Restoring ${data.creatures.length} creatures from idle NPCs`);
+
+  // Clear current creatures and rebuild from restored data
+  myTadpoles = [];
+  selectedTadpoles.clear();
+
+  data.creatures.forEach((creature, index) => {
+    // Determine type-specific defaults
+    let defaultColor = '#FFFFFF';
+    let defaultRadius = TADPOLE_RADIUS;
+    let defaultHealth = MAX_HEALTH;
+    if (creature.type === 'cell') {
+      defaultColor = '#4a5f7f';
+      defaultRadius = CELL_RADIUS;
+      defaultHealth = CELL_MAX_HEALTH;
+    } else if (creature.type === 'bacteria') {
+      defaultColor = '#7fbf7f';
+      defaultRadius = BACTERIA_RADIUS;
+      defaultHealth = BACTERIA_MAX_HEALTH;
+    }
+
+    const tad = {
+      id: creature.id || `restored_${Date.now()}_${index}`,
+      x: creature.x,
+      y: creature.y,
+      renderX: creature.x,
+      renderY: creature.y,
+      vx: 0,
+      vy: 0,
+      color: defaultColor,
+      radius: creature.radius || defaultRadius,
+      name: currentUser ? currentUser.username : creature.name,
+      type: creature.type || 'tadpole',
+      health: creature.health || defaultHealth,
+      maxHealth: creature.maxHealth || defaultHealth,
+      food: creature.food || 0,
+      nucleotides: creature.nucleotides || 0,
+      angle: creature.angle || 0,
+      wiggleOffset: Math.random() * Math.PI * 2,
+      lastHit: 0,
+      lastAttack: 0,
+      // Tadpole upgrades
+      healthLevel: creature.healthLevel || 0,
+      strengthLevel: creature.strengthLevel || 0,
+      capacityLevel: creature.capacityLevel || 0,
+      maxHealthBonus: creature.maxHealthBonus || 0,
+      strengthBonus: creature.strengthBonus || 0,
+      // Cell upgrades
+      cellHealthLevel: creature.cellHealthLevel || 0,
+      cellStrengthLevel: creature.cellStrengthLevel || 0,
+      cellCapacityLevel: creature.cellCapacityLevel || 0,
+      cellSpeedLevel: creature.cellSpeedLevel || 0,
+      cellSpeedBonus: creature.cellSpeedBonus || 0,
+      cellStrengthBonus: creature.cellStrengthBonus || 0,
+      hasProtector: creature.hasProtector || false,
+      canBubbleShield: creature.hasProtector || false,
+      bubbleShieldActive: creature.bubbleShieldActive || false,
+      hasSword: creature.hasSword || false,
+      hasCellTail: creature.hasCellTail || false,
+      canHibernate: creature.canHibernate || false,
+      // Bacteria-specific
+      isFarming: creature.isFarming || false
+    };
+
+    // Initialize type-specific properties
+    if (tad.type === 'tadpole') {
+      initializeTadpole(tad);
+    } else if (tad.type === 'cell') {
+      tad.wiggleOffset = Math.random() * Math.PI * 2;
+      if (tad.hasCellTail) {
+        initializeCellTail(tad);
+      }
+    } else if (tad.type === 'bacteria') {
+      tad.blobShape = generateBlobShape();
+    }
+
+    myTadpoles.push(tad);
+    if (index === 0) {
+      selectedTadpoles.add(tad.id);
+    }
+  });
+
+  // Initialize particles around first creature
+  if (myTadpoles.length > 0) {
+    initializeParticles(myTadpoles[0].x, myTadpoles[0].y);
+  }
+
+  updateSelectionCount();
+  console.log(`Restored ${myTadpoles.length} creatures`);
+});
+
 socket.on('init', async (data) => {
   myId = data.id;
+
+  // Check if user died while inactive FIRST - before any other logic
+  if (data.diedWhileInactive) {
+    console.log('You died while inactive (before reconnecting)');
+    isDead = true;
+    myTadpoles = [];
+    selectedTadpoles.clear();
+
+    // Clear saved progress so player starts fresh as tadpole
+    clearProgressOnDeath();
+
+    // Update death screen message
+    const deathTitle = deathScreen.querySelector('h1');
+    if (deathTitle) {
+      deathTitle.textContent = 'You Died While Inactive';
+    }
+    deathScreen.classList.remove('hidden');
+    return; // Don't initialize anything else
+  }
 
   // Wait for session check to complete (with timeout)
   let waitCount = 0;
@@ -919,24 +1174,133 @@ socket.on('init', async (data) => {
     waitCount++;
   }
 
+  // If server sent restored creatures from idle NPCs, use those
+  if (data.restoredCreatures && data.restoredCreatures.length > 0) {
+    console.log(`Restoring ${data.restoredCreatures.length} creatures from server (idle NPCs)`);
+
+    // Clear current creatures and rebuild from restored data
+    myTadpoles = [];
+    selectedTadpoles.clear();
+
+    data.restoredCreatures.forEach((creature, index) => {
+      // Determine type-specific defaults
+      let defaultColor = '#FFFFFF';
+      let defaultRadius = TADPOLE_RADIUS;
+      let defaultHealth = MAX_HEALTH;
+      if (creature.type === 'cell') {
+        defaultColor = '#4a5f7f';
+        defaultRadius = CELL_RADIUS;
+        defaultHealth = CELL_MAX_HEALTH;
+      } else if (creature.type === 'bacteria') {
+        defaultColor = '#7fbf7f';
+        defaultRadius = BACTERIA_RADIUS;
+        defaultHealth = BACTERIA_MAX_HEALTH;
+      }
+
+      const tad = {
+        id: creature.id || `creature_${index}`,
+        x: creature.x,
+        y: creature.y,
+        renderX: creature.x,
+        renderY: creature.y,
+        vx: 0,
+        vy: 0,
+        color: defaultColor,
+        radius: creature.radius || defaultRadius,
+        health: creature.health || defaultHealth,
+        maxHealth: creature.maxHealth || defaultHealth,
+        food: creature.food || 0,
+        nucleotides: creature.nucleotides || 0,
+        angle: creature.angle || 0,
+        type: creature.type || 'tadpole',
+        lastHit: 0,
+        lastAttack: 0,
+        name: currentUser?.username || data.player.name || 'Player',
+        // Tadpole upgrades
+        healthLevel: creature.healthLevel || 0,
+        strengthLevel: creature.strengthLevel || 0,
+        capacityLevel: creature.capacityLevel || 0,
+        maxHealthBonus: creature.maxHealthBonus || 0,
+        strengthBonus: creature.strengthBonus || 0,
+        // Cell upgrades
+        cellHealthLevel: creature.cellHealthLevel || 0,
+        cellStrengthLevel: creature.cellStrengthLevel || 0,
+        cellCapacityLevel: creature.cellCapacityLevel || 0,
+        cellSpeedLevel: creature.cellSpeedLevel || 0,
+        cellSpeedBonus: creature.cellSpeedBonus || 0,
+        cellStrengthBonus: creature.cellStrengthBonus || 0,
+        cellMaxHealthBonus: creature.cellMaxHealthBonus || 0,
+        hasProtector: creature.hasProtector || false,
+        canBubbleShield: creature.hasProtector || false,
+        bubbleShieldActive: creature.bubbleShieldActive || false,
+        hasSword: creature.hasSword || false,
+        hasCellTail: creature.hasCellTail || false,
+        canHibernate: creature.canHibernate || false,
+        // Bacteria-specific
+        isFarming: creature.isFarming || false
+      };
+
+      // Initialize type-specific properties
+      if (tad.type === 'tadpole') {
+        initializeTadpole(tad);
+      } else if (tad.type === 'cell') {
+        tad.wiggleOffset = Math.random() * Math.PI * 2;
+        if (tad.hasCellTail) {
+          initializeCellTail(tad);
+        }
+      } else if (tad.type === 'bacteria') {
+        tad.blobShape = generateBlobShape();
+      }
+
+      myTadpoles.push(tad);
+      if (index === 0) {
+        selectedTadpoles.add(tad.id);
+      }
+    });
+
+    // Initialize particles around first creature
+    if (myTadpoles.length > 0) {
+      initializeParticles(myTadpoles[0].x, myTadpoles[0].y);
+    }
+
+    // Clear movement target so creatures stay still
+    moveTarget = null;
+
+    updateSelectionCount();
+    console.log(`Restored ${myTadpoles.length} creatures from idle NPCs`);
+
+    // Still need to call setName to update server tracking
+    if (currentUser && !data.isSecondary) {
+      socket.emit('setName', currentUser.username);
+    }
+    return;
+  }
+
   // If we already have creatures loaded from saved progress, don't overwrite them
   if (myTadpoles.length > 0) {
     console.log('Keeping loaded creatures, skipping default spawn');
 
-    // Use username if logged in
+    // Use username if logged in (but only call setName for primary windows)
     if (currentUser) {
       myTadpoles.forEach(tad => {
         tad.name = currentUser.username;
       });
-      socket.emit('setName', currentUser.username);
+      // Only call setName for primary windows - secondary windows are already handled by server
+      if (!data.isSecondary) {
+        socket.emit('setName', currentUser.username);
+      }
     }
 
     // Initialize particles around first creature
     const firstTad = myTadpoles[0];
     initializeParticles(firstTad.x, firstTad.y);
 
-    // Initialize tails for loaded creatures
+    // Initialize tails and ensure zero velocity for loaded creatures
     myTadpoles.forEach(tad => {
+      // Start stationary
+      tad.vx = 0;
+      tad.vy = 0;
+
       if (tad.type === 'tadpole') {
         initializeTadpole(tad);
       } else if (tad.type === 'cell') {
@@ -948,6 +1312,9 @@ socket.on('init', async (data) => {
       }
     });
 
+    // Clear movement target so creatures stay still
+    moveTarget = null;
+
     // Select the first creature
     selectedTadpoles.clear();
     selectedTadpoles.add(firstTad.id);
@@ -958,17 +1325,28 @@ socket.on('init', async (data) => {
   const player = data.player;
   player.renderX = player.x;
   player.renderY = player.y;
-  player.health = MAX_HEALTH;
+  player.vx = 0; // Start stationary
+  player.vy = 0;
+  player.health = player.health || MAX_HEALTH;
   player.lastHit = 0;
   player.lastAttack = 0;
-  player.type = 'tadpole';
-  player.food = 0; // Start with 0 food
-  player.radius = TADPOLE_RADIUS; // Override server radius to use consistent client size
+  player.type = player.type || 'tadpole';
+  player.food = player.food || 0;
+  player.radius = player.radius || TADPOLE_RADIUS;
 
-  // Use username if logged in
-  if (currentUser) {
+  // Clear any movement target so player stays still
+  moveTarget = null;
+
+  // For secondary windows, server already knows the user - don't call setName
+  // For primary windows, set the name
+  if (!data.isSecondary && currentUser) {
     player.name = currentUser.username;
     socket.emit('setName', currentUser.username);
+  } else if (data.isSecondary) {
+    console.log('Secondary window - view only mode (another window controls this tadpole)');
+    isSecondaryWindow = true;
+    // Use the player's name from server data
+    player.name = player.name || currentUser?.username || 'Player';
   }
 
   initializeTadpole(player);
@@ -1042,32 +1420,35 @@ socket.on('playerIdle', (data) => {
 
   // Remove from players if they're there
   if (players[playerId]) {
-    console.log('Converting idle player to NPC:', playerData.name || playerId);
+    console.log('Converting idle player to idle NPC:', playerData.name || playerId);
 
     // Determine if player was a cell or tadpole
     const wasCell = playerData.type === 'cell';
 
-    // Convert to NPC - preserve player type
+    // Convert to idle NPC - preserve player type and name
+    const idleHealth = wasCell ? NPC_CELL_HEALTH : NPC_TADPOLE_HEALTH;
     const npc = {
       id: playerId,
       x: playerData.x,
       y: playerData.y,
-      vx: playerData.vx || 0,
-      vy: playerData.vy || 0,
+      vx: 0, // Idle players don't move until provoked
+      vy: 0,
       renderX: playerData.x,
       renderY: playerData.y,
-      color: '#505050', // NPC color
+      color: '#a0a0a0', // Light grey for idle players
       radius: wasCell ? NPC_CELL_RADIUS : NPC_TADPOLE_RADIUS,
       score: 0,
-      name: '', // NPCs don't show names
-      health: NPC_MAX_HEALTH,
+      name: playerData.name || '', // Preserve player name for idle players
+      health: idleHealth,
+      maxHealth: idleHealth,
       lastHit: 0,
       lastAttack: 0,
       type: wasCell ? 'cell' : 'tadpole',
       moveTarget: null,
       targetChangeTime: Date.now(),
       provoked: false,
-      food: playerData.food || 0 // Preserve food storage
+      food: playerData.food || 0, // Preserve food storage
+      isIdlePlayer: true // Mark as idle player for special rendering
     };
     npc.renderX = npc.x;
     npc.renderY = npc.y;
@@ -1130,6 +1511,20 @@ socket.on('playerActive', (data) => {
 });
 
 socket.on('playerMoved', (data) => {
+  // If this is our own player (multi-window: another window moved it), sync to myTadpoles
+  if (data.id === myId && myTadpoles.length > 0) {
+    // Another window controlling our tadpole - sync position
+    myTadpoles.forEach(tad => {
+      tad.x = data.x;
+      tad.y = data.y;
+      tad.vx = data.vx;
+      tad.vy = data.vy;
+      tad.renderX = data.x;
+      tad.renderY = data.y;
+    });
+    return;
+  }
+
   if (players[data.id]) {
     players[data.id].x = data.x;
     players[data.id].y = data.y;
@@ -1186,6 +1581,10 @@ socket.on('npcs', (serverNpcs) => {
     const npc = { ...npcData };
     npc.renderX = npc.x;
     npc.renderY = npc.y;
+    // Ensure maxHealth is set for health bar display
+    if (!npc.maxHealth) {
+      npc.maxHealth = npc.type === 'cell' ? NPC_CELL_HEALTH : NPC_TADPOLE_HEALTH;
+    }
     if (npc.type === 'cell') {
       npc.angle = 0;
       npc.wiggleOffset = Math.random() * Math.PI * 2;
@@ -1215,10 +1614,18 @@ socket.on('npcUpdate', (serverNpcs) => {
       npc.vx = serverNpc.vx;
       npc.vy = serverNpc.vy;
       npc.health = serverNpc.health;
+      npc.maxHealth = serverNpc.maxHealth || npc.maxHealth;
       npc.provoked = serverNpc.provoked;
       npc.isTired = serverNpc.isTired;
       npc.chaseEnergy = serverNpc.chaseEnergy;
       npc.isSprinting = serverNpc.isSprinting;
+      // Preserve idle player properties from server
+      npc.isIdlePlayer = serverNpc.isIdlePlayer || false;
+      npc.name = serverNpc.name || npc.name || '';
+      npc.color = serverNpc.color || npc.color;
+      // Preserve protector/shield properties for idle players
+      npc.hasProtector = serverNpc.hasProtector || false;
+      npc.bubbleShieldActive = serverNpc.bubbleShieldActive || false;
       // Convert server lunge time to client time - if it's a new attack, use current time
       if (serverNpc.attackLungeTime && serverNpc.attackLungeTime !== npc.lastServerLungeTime) {
         npc.attackLungeTime = Date.now(); // Use client time for animation
@@ -1268,6 +1675,80 @@ socket.on('npcDied', (data) => {
     startTime: Date.now(),
     duration: 2000
   });
+
+  // Remove the NPC from local state
+  delete npcs[data.id];
+});
+
+socket.on('idlePlayerDied', (data) => {
+  // Create death effect
+  deathEffects.push({
+    x: data.x,
+    y: data.y,
+    radius: data.radius,
+    startTime: Date.now(),
+    duration: 2000
+  });
+
+  // Remove from NPCs
+  delete npcs[data.id];
+
+  // Check if this was the current user's idle self
+  if (currentUser && data.name === currentUser.username) {
+    console.log('Your inactive self was killed!');
+    // Show death screen with inactive message
+    isDead = true;
+    myTadpoles = [];
+    selectedTadpoles.clear();
+
+    // Clear saved progress so player starts fresh as tadpole
+    clearProgressOnDeath();
+
+    // Update death screen message
+    const deathTitle = deathScreen.querySelector('h1');
+    if (deathTitle) {
+      deathTitle.textContent = 'You Died While Inactive';
+    }
+
+    // Add subtitle if not already there
+    let deathSubtitle = deathScreen.querySelector('.death-subtitle');
+    if (!deathSubtitle) {
+      deathSubtitle = document.createElement('p');
+      deathSubtitle.className = 'death-subtitle';
+      deathScreen.insertBefore(deathSubtitle, deathScreen.querySelector('button'));
+    }
+    deathSubtitle.textContent = 'Someone killed your idle avatar while you were away.';
+
+    deathScreen.classList.remove('hidden');
+  }
+});
+
+// Handle server notification that user died while inactive (sent via setName handler)
+socket.on('diedWhileInactive', () => {
+  console.log('Server notified: You died while inactive');
+  isDead = true;
+  myTadpoles = [];
+  selectedTadpoles.clear();
+
+  // Clear saved progress so player starts fresh as tadpole
+  clearProgressOnDeath();
+
+  // Update death screen message
+  const deathTitle = deathScreen.querySelector('h1');
+  if (deathTitle) {
+    deathTitle.textContent = 'You Died While Inactive';
+  }
+
+  // Add subtitle if not already there
+  let deathSubtitle = deathScreen.querySelector('.death-subtitle');
+  if (!deathSubtitle) {
+    deathSubtitle = document.createElement('p');
+    deathSubtitle.className = 'death-subtitle';
+    deathScreen.insertBefore(deathSubtitle, deathScreen.querySelector('button'));
+  }
+  deathSubtitle.textContent = 'Someone killed your idle avatar while you were away.';
+
+  deathScreen.classList.remove('hidden');
 });
 
 socket.on('npcRespawned', (npcData) => {
@@ -1311,7 +1792,7 @@ socket.on('npcAttack', (data) => {
       let isProtected = false;
       for (let protector of myTadpoles) {
         if (protector.type === 'cell' && protector.hasProtector && protector.bubbleShieldActive) {
-          const shieldRadius = protector.radius * 4;
+          const shieldRadius = protector.radius * 12;
           const dx = closestTad.x - protector.x;
           const dy = closestTad.y - protector.y;
           const dist = Math.sqrt(dx * dx + dy * dy);
@@ -1333,6 +1814,114 @@ socket.on('npcAttack', (data) => {
         // Shield absorbed the hit - show visual feedback
         spawnDamageText(closestTad.x, closestTad.y, 0, 'Shielded!');
       }
+    }
+  }
+});
+
+// Handle player damage broadcast (server-authoritative)
+socket.on('playerDamaged', (data) => {
+  // Update player health from server
+  if (players[data.playerId]) {
+    players[data.playerId].health = data.health;
+    players[data.playerId].maxHealth = data.maxHealth;
+    spawnDamageText(data.x, data.y, data.damage);
+  }
+});
+
+// Handle other player dying (from PvP or other causes)
+socket.on('otherPlayerDied', (data) => {
+  // Check if this is OUR player dying (from server-side PvP death detection)
+  if (data.playerId === socket.id) {
+    console.log('We died from PvP (server-authoritative)');
+
+    // Create death effect at our location
+    deathEffects.push({
+      x: data.x,
+      y: data.y,
+      radius: myTadpoles[0]?.radius || 8,
+      startTime: Date.now(),
+      duration: 2000
+    });
+
+    // Clear all our tadpoles
+    myTadpoles = [];
+    selectedTadpoles.clear();
+
+    // Show death screen
+    isDead = true;
+    deathScreen.classList.remove('hidden');
+
+    // Clear saved progress so player starts fresh as tadpole
+    clearProgressOnDeath();
+
+    // Notify server (for cleanup)
+    socket.emit('playerDied', { x: data.x, y: data.y });
+    return;
+  }
+
+  const player = players[data.playerId];
+  if (player) {
+    // Create death effect
+    deathEffects.push({
+      x: data.x,
+      y: data.y,
+      radius: player.radius || 8,
+      startTime: Date.now(),
+      duration: 2000
+    });
+
+    // Remove from players list so they disappear
+    delete players[data.playerId];
+    console.log(`Player ${data.playerId} died`);
+  }
+});
+
+// Handle player-vs-player attacks
+socket.on('playerAttacked', (data) => {
+  // Another player attacked us - apply damage to our tadpole
+  if (myTadpoles.length > 0) {
+    // Find the closest tadpole to the attacker
+    const attacker = players[data.attackerId];
+    let closestTad = myTadpoles[0];
+
+    if (attacker) {
+      let closestDist = Infinity;
+      for (let tad of myTadpoles) {
+        const dx = tad.x - attacker.x;
+        const dy = tad.y - attacker.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < closestDist) {
+          closestDist = dist;
+          closestTad = tad;
+        }
+      }
+    }
+
+    // Check if protected by a Protector's bubble shield
+    let isProtected = false;
+    for (let protector of myTadpoles) {
+      if (protector.type === 'cell' && protector.hasProtector && protector.bubbleShieldActive) {
+        const shieldRadius = protector.radius * 12;
+        const dx = closestTad.x - protector.x;
+        const dy = closestTad.y - protector.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < shieldRadius) {
+          isProtected = true;
+          break;
+        }
+      }
+    }
+
+    if (!isProtected) {
+      // Apply damage
+      closestTad.health -= data.damage;
+      closestTad.lastHit = Date.now();
+      closestTad.vx += data.knockbackX || 0;
+      closestTad.vy += data.knockbackY || 0;
+      spawnDamageText(closestTad.x, closestTad.y, data.damage);
+    } else {
+      // Shield absorbed the hit
+      spawnDamageText(closestTad.x, closestTad.y, 0, 'Shielded!');
     }
   }
 });
@@ -1564,6 +2153,41 @@ chatInput.addEventListener('keydown', (e) => {
           console.log('Mitosis cheat: transformation started without cost');
         }
       }
+      return;
+    }
+
+    if (input.startsWith('/tp ')) {
+      const coords = input.substring(4).split('/');
+      if (coords.length === 2) {
+        const x = parseFloat(coords[0]);
+        const y = parseFloat(coords[1]);
+        if (!isNaN(x) && !isNaN(y)) {
+          // Teleport all player's creatures to the coordinates
+          myTadpoles.forEach(tad => {
+            tad.x = x;
+            tad.y = y;
+            tad.renderX = x;
+            tad.renderY = y;
+            tad.vx = 0;
+            tad.vy = 0;
+          });
+          // Clear movement target so creatures stay still
+          moveTarget = null;
+          chatInput.value = '';
+          console.log(`Teleported to ${x}, ${y}`);
+        }
+      }
+      return;
+    }
+
+    // Test mode cheat: infinite food + NPC cells ignore you
+    if (input === '/testmode' || input === '/god') {
+      testMode = !testMode;
+      socket.emit('testMode', { enabled: testMode });
+      chatInput.value = '';
+      console.log(`Test mode ${testMode ? 'ENABLED' : 'DISABLED'}: infinite food, NPCs ignore you`);
+      // Visual feedback
+      spawnDamageText(myTadpoles[0]?.x || 0, myTadpoles[0]?.y || 0, 0, testMode ? 'TEST MODE ON' : 'TEST MODE OFF');
       return;
     }
 
@@ -1838,6 +2462,7 @@ function updateTail(entity, time) {
 // Input handling
 canvas.addEventListener('click', (e) => {
   if (isDead || myTadpoles.length === 0) return;
+  if (isSecondaryWindow) return; // Secondary windows are view-only
 
   const rect = canvas.getBoundingClientRect();
   const clickX = e.clientX - rect.left;
@@ -1901,6 +2526,34 @@ canvas.addEventListener('click', (e) => {
       updateSelectionCount();
 
       console.log(`Creature ${sourceCreature.id} is now supporting ${clickedEntity.id}`);
+    }
+    return;
+  }
+
+  // If waiting to select a food transfer target
+  if (waitingForFoodTarget && clickedEntity && myTadpoles.includes(clickedEntity)) {
+    const sourceCreature = myTadpoles.find(t => t.id === foodSourceId);
+    if (sourceCreature && clickedEntity.id !== foodSourceId && sourceCreature.food > 0) {
+      // Calculate how much food can be transferred
+      const targetCapacity = clickedEntity.type === 'cell' ? CELL_FOOD_CAPACITY : getFoodCapacity(clickedEntity);
+      const availableSpace = targetCapacity - (clickedEntity.food || 0);
+      const transferAmount = Math.min(sourceCreature.food, availableSpace);
+
+      if (transferAmount > 0) {
+        // Transfer the food
+        sourceCreature.food -= transferAmount;
+        clickedEntity.food = (clickedEntity.food || 0) + transferAmount;
+
+        console.log(`Transferred ${transferAmount} food from ${sourceCreature.name} to ${clickedEntity.name}`);
+      }
+
+      waitingForFoodTarget = false;
+      foodSourceId = null;
+
+      // Select the receiving creature
+      selectedTadpoles.clear();
+      selectedTadpoles.add(clickedEntity.id);
+      updateSelectionCount();
     }
     return;
   }
@@ -1986,10 +2639,12 @@ canvas.addEventListener('contextmenu', (e) => {
     }
   }
 
-  // Right-clicked somewhere else - deselect all and cancel support mode
+  // Right-clicked somewhere else - deselect all and cancel selection modes
   selectedTadpoles.clear();
   waitingForSupportTarget = false;
   supportSourceId = null;
+  waitingForFoodTarget = false;
+  foodSourceId = null;
   updateSelectionCount();
   selectionMenu.classList.add('hidden');
   moveTarget = null;
@@ -2011,10 +2666,18 @@ document.addEventListener('keydown', (e) => {
     console.log('Support selection cancelled with Escape');
   }
 
+  // Escape cancels food transfer mode
+  if (e.key === 'Escape' && waitingForFoodTarget) {
+    waitingForFoodTarget = false;
+    foodSourceId = null;
+    updateSelectionCount();
+    console.log('Food transfer cancelled with Escape');
+  }
+
   // 'B' toggles bubble shield for Protector cells
   if (e.key.toLowerCase() === 'b') {
     myTadpoles.forEach(tad => {
-      if (tad.type === 'cell' && tad.hasProtector && selectedTadpoles.has(tad.id)) {
+      if (tad.type === 'cell' && tad.hasProtector && selectedTadpoles.has(tad.id) && !tad.isHibernating) {
         tad.bubbleShieldActive = !tad.bubbleShieldActive;
         // Notify server of shield state for protection from NPCs
         socket.emit('bubbleShield', { oderId: tad.id, active: tad.bubbleShieldActive });
@@ -2027,15 +2690,137 @@ document.addEventListener('keyup', (e) => {
   keys[e.key.toLowerCase()] = false;
 });
 
+// Force save progress immediately (bypass rate limit)
+async function forceSaveProgress() {
+  if (!currentUser || myTadpoles.length === 0) return;
+
+  try {
+    const creatures = myTadpoles.map(tad => ({
+      type: tad.type,
+      name: tad.name,
+      x: tad.x,
+      y: tad.y,
+      angle: tad.angle || 0,
+      health: tad.health,
+      food: tad.food,
+      nucleotides: tad.nucleotides || 0,
+      healthLevel: tad.healthLevel || 0,
+      strengthLevel: tad.strengthLevel || 0,
+      capacityLevel: tad.capacityLevel || 0,
+      cellHealthLevel: tad.cellHealthLevel || 0,
+      cellStrengthLevel: tad.cellStrengthLevel || 0,
+      cellCapacityLevel: tad.cellCapacityLevel || 0,
+      cellSpeedLevel: tad.cellSpeedLevel || 0,
+      hasCellTail: tad.hasCellTail || false,
+      hasProtector: tad.hasProtector || false,
+      hasSword: tad.hasSword || false,
+      canHibernate: tad.canHibernate || false,
+      bubbleShieldActive: tad.bubbleShieldActive || false
+    }));
+
+    let highestEvolution = 'tadpole';
+    for (const c of creatures) {
+      if (c.type === 'cell') {
+        highestEvolution = 'cell';
+        break;
+      }
+    }
+
+    await fetch('/api/auth/save-progress', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        creatures,
+        stats: { highestEvolution }
+      })
+    });
+  } catch (error) {
+    console.error('Force save error:', error);
+  }
+}
+
 // Detect when player tab becomes inactive
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
-    // Tab is hidden - notify server
-    socket.emit('playerInactive');
+    // Tab is hidden - save progress immediately before going inactive
+    forceSaveProgress();
+    // Send all creatures to server for idle NPC conversion (include all upgrade data)
+    const creatures = myTadpoles.map(tad => ({
+      id: tad.id,
+      type: tad.type,
+      name: tad.name,
+      x: tad.x,
+      y: tad.y,
+      angle: tad.angle || 0,
+      health: tad.health,
+      maxHealth: tad.maxHealth || (tad.type === 'cell' ? CELL_MAX_HEALTH : MAX_HEALTH),
+      food: tad.food,
+      nucleotides: tad.nucleotides || 0,
+      radius: tad.radius,
+      // Tadpole upgrades
+      healthLevel: tad.healthLevel || 0,
+      strengthLevel: tad.strengthLevel || 0,
+      capacityLevel: tad.capacityLevel || 0,
+      maxHealthBonus: tad.maxHealthBonus || 0,
+      strengthBonus: tad.strengthBonus || 0,
+      // Cell upgrades
+      cellHealthLevel: tad.cellHealthLevel || 0,
+      cellStrengthLevel: tad.cellStrengthLevel || 0,
+      cellCapacityLevel: tad.cellCapacityLevel || 0,
+      cellSpeedLevel: tad.cellSpeedLevel || 0,
+      cellSpeedBonus: tad.cellSpeedBonus || 0,
+      cellStrengthBonus: tad.cellStrengthBonus || 0,
+      hasProtector: tad.hasProtector || false,
+      bubbleShieldActive: tad.bubbleShieldActive || false,
+      hasSword: tad.hasSword || false,
+      hasCellTail: tad.hasCellTail || false,
+      canHibernate: tad.canHibernate || false
+    }));
+    socket.emit('playerInactive', { creatures });
   } else {
     // Tab is visible again - notify server
     socket.emit('playerActive');
   }
+});
+
+// Save progress before page unload (use sendBeacon for reliability)
+window.addEventListener('beforeunload', () => {
+  if (!currentUser || myTadpoles.length === 0) return;
+
+  const creatures = myTadpoles.map(tad => ({
+    type: tad.type,
+    name: tad.name,
+    x: tad.x,
+    y: tad.y,
+    angle: tad.angle || 0,
+    health: tad.health,
+    food: tad.food,
+    nucleotides: tad.nucleotides || 0,
+    healthLevel: tad.healthLevel || 0,
+    strengthLevel: tad.strengthLevel || 0,
+    capacityLevel: tad.capacityLevel || 0,
+    cellHealthLevel: tad.cellHealthLevel || 0,
+    cellStrengthLevel: tad.cellStrengthLevel || 0,
+    cellCapacityLevel: tad.cellCapacityLevel || 0,
+    cellSpeedLevel: tad.cellSpeedLevel || 0,
+    hasCellTail: tad.hasCellTail || false,
+    hasProtector: tad.hasProtector || false,
+    hasSword: tad.hasSword || false,
+    canHibernate: tad.canHibernate || false,
+    bubbleShieldActive: tad.bubbleShieldActive || false
+  }));
+
+  let highestEvolution = 'tadpole';
+  for (const c of creatures) {
+    if (c.type === 'cell') {
+      highestEvolution = 'cell';
+      break;
+    }
+  }
+
+  // sendBeacon is more reliable for unload events - use Blob for proper Content-Type
+  const blob = new Blob([JSON.stringify({ creatures, stats: { highestEvolution } })], { type: 'application/json' });
+  navigator.sendBeacon('/api/auth/save-progress', blob);
 });
 
 // Menu handlers
@@ -2068,6 +2853,28 @@ supportBtn.addEventListener('click', () => {
   }
 });
 
+giveFoodBtn.addEventListener('click', () => {
+  if (selectedTadpoles.size > 0 && myTadpoles.length > 1) {
+    const selectedId = Array.from(selectedTadpoles)[0];
+    const selectedTad = myTadpoles.find(t => t.id === selectedId);
+
+    if (selectedTad) {
+      if (waitingForFoodTarget && foodSourceId === selectedTad.id) {
+        // Already in selection mode with this creature - cancel
+        waitingForFoodTarget = false;
+        foodSourceId = null;
+        console.log('Food giving cancelled');
+      } else if (selectedTad.food > 0) {
+        // Enter selection mode - waiting for player to click a creature to give food to
+        waitingForFoodTarget = true;
+        foodSourceId = selectedTad.id;
+        console.log('Click another creature to give food to...');
+      }
+      updateSelectionCount();
+    }
+  }
+});
+
 hibernateBtn.addEventListener('click', () => {
   if (selectedTadpoles.size > 0) {
     const selectedId = Array.from(selectedTadpoles)[0];
@@ -2094,7 +2901,7 @@ shieldBtn.addEventListener('click', () => {
     const selectedId = Array.from(selectedTadpoles)[0];
     const selectedTad = myTadpoles.find(t => t.id === selectedId);
 
-    if (selectedTad && selectedTad.type === 'cell' && selectedTad.hasProtector) {
+    if (selectedTad && selectedTad.type === 'cell' && selectedTad.hasProtector && !selectedTad.isHibernating) {
       selectedTad.bubbleShieldActive = !selectedTad.bubbleShieldActive;
       // Notify server of shield state for protection from NPCs
       socket.emit('bubbleShield', { oderId: selectedTad.id, active: selectedTad.bubbleShieldActive });
@@ -2103,8 +2910,38 @@ shieldBtn.addEventListener('click', () => {
   }
 });
 
-restartBtn.addEventListener('click', () => {
+farmBtn.addEventListener('click', () => {
+  if (selectedTadpoles.size > 0) {
+    const selectedId = Array.from(selectedTadpoles)[0];
+    const selectedTad = myTadpoles.find(t => t.id === selectedId);
+
+    if (selectedTad && selectedTad.type === 'bacteria') {
+      // Toggle farming mode
+      selectedTad.isFarming = !selectedTad.isFarming;
+      console.log(`Bacteria farming mode: ${selectedTad.isFarming ? 'ON' : 'OFF'}`);
+      updateSelectionCount();
+    }
+  }
+});
+
+restartBtn.addEventListener('click', async () => {
+  // Make sure progress is cleared before reloading (wait for server confirmation)
+  if (currentUser) {
+    await clearProgressOnDeath();
+  }
   location.reload();
+});
+
+// Test mode button handler
+testModeBtn.addEventListener('click', () => {
+  testMode = !testMode;
+  testModeBtn.classList.toggle('active', testMode);
+  socket.emit('testMode', { enabled: testMode });
+  console.log(`Test mode ${testMode ? 'ENABLED' : 'DISABLED'}: infinite food, NPCs ignore you`);
+  // Visual feedback
+  if (myTadpoles.length > 0) {
+    spawnDamageText(myTadpoles[0].x, myTadpoles[0].y, 0, testMode ? 'TEST MODE ON' : 'TEST MODE OFF');
+  }
 });
 
 // Upgrade menu handlers
@@ -2238,6 +3075,17 @@ function handleTechClick(nodeId) {
     selectedTad.transformationStartTime = Date.now();
     selectedTad.baseRadius = selectedTad.radius;
     upgradeMenu.classList.add('hidden');
+  } else if (techData.type === 'transformBacteria') {
+    if (selectedTad.type !== 'tadpole' || selectedTad.isTransforming) return;
+    // Require 1 nucleotide for evolution
+    const nucleotides = selectedTad.nucleotides || 0;
+    if (nucleotides < 1) return;
+    // Consume the nucleotide
+    selectedTad.nucleotides = 0;
+    selectedTad.isTransformingToBacteria = true;
+    selectedTad.transformationStartTime = Date.now();
+    selectedTad.baseRadius = selectedTad.radius;
+    upgradeMenu.classList.add('hidden');
   }
   // Cell upgrades
   else if (techData.type === 'cellHealth') {
@@ -2266,6 +3114,8 @@ function handleTechClick(nodeId) {
   } else if (techData.type === 'cellProtector') {
     selectedTad.hasProtector = true;
     selectedTad.canBubbleShield = true;
+    // Notify server that this player has protector upgrade
+    socket.emit('hasProtector', { active: true });
   } else if (techData.type === 'cellSword') {
     selectedTad.hasSword = true;
     // Additional damage bonus from sword
@@ -2386,6 +3236,7 @@ function getUpgradeLevel(tad, type) {
   if (type === 'strength') return tad.strengthLevel || 0;
   if (type === 'capacity') return tad.capacityLevel || 0;
   if (type === 'transform') return tad.type === 'cell' ? 1 : 0;
+  if (type === 'transformBacteria') return tad.type === 'bacteria' ? 1 : 0;
   // Cell upgrades
   if (type === 'cellHealth') return tad.cellHealthLevel || 0;
   if (type === 'cellStrength') return tad.cellStrengthLevel || 0;
@@ -2613,10 +3464,22 @@ function updateUpgradeMenu() {
       }
       const isUnaffordable = !isResearched && !isLocked && !canAfford;
 
-      // Check fog of war: node is 2+ levels beyond current progress
+      // Check fog of war: node is 2+ levels beyond current progress, OR locked by cross-type prerequisite
       const myResearchedLevel = maxResearchedLevel[techData.type] || 0;
       const levelsAhead = techData.level - myResearchedLevel;
-      const isFogged = isLocked && levelsAhead >= 2 && !isBranchLocked;
+      let isFogged = false;
+      if (isLocked && !isBranchLocked) {
+        if (levelsAhead >= 2) {
+          // 2+ levels ahead in same type = fog
+          isFogged = true;
+        } else if (techData.requires) {
+          // If locked by a cross-type prerequisite (different type), also fog
+          const reqNode = techTree[techData.requires];
+          if (reqNode && reqNode.type !== techData.type) {
+            isFogged = true;
+          }
+        }
+      }
 
       // Debug logging for cell tech nodes
       if (isDebugCellTree && (nodeId === 'cellTechWall' || nodeId === 'cellTechER' || nodeId === 'cellTechStorage')) {
@@ -2676,12 +3539,14 @@ function updateUpgradeMenu() {
 
   // Update evolution options visibility
   const techMitosis = document.getElementById('techMitosis');
+  const techBacteria = document.getElementById('techBacteria');
   const techHibernate = document.getElementById('techHibernate');
   const techSplit = document.getElementById('techSplit');
 
   if (isCell) {
-    // Hide Mitosis for cells, show Hibernate and Split
+    // Hide Mitosis and Bacteria for cells, show Hibernate and Split
     if (techMitosis) techMitosis.classList.add('hidden');
+    if (techBacteria) techBacteria.classList.add('hidden');
     if (techHibernate) {
       // Only show Hibernate if the tech is unlocked
       if (selectedTad.canHibernate) {
@@ -2706,9 +3571,16 @@ function updateUpgradeMenu() {
         techSplit.classList.remove('unaffordable');
       }
     }
+  } else if (selectedTad.type === 'bacteria') {
+    // Hide all evolution options for bacteria (bacteria can't evolve further)
+    if (techMitosis) techMitosis.classList.add('hidden');
+    if (techBacteria) techBacteria.classList.add('hidden');
+    if (techHibernate) techHibernate.classList.add('hidden');
+    if (techSplit) techSplit.classList.add('hidden');
   } else {
-    // Show Mitosis for tadpoles, hide Hibernate and Split
+    // Show Mitosis and Bacteria for tadpoles, hide Hibernate and Split
     if (techMitosis) techMitosis.classList.remove('hidden');
+    if (techBacteria) techBacteria.classList.remove('hidden');
     if (techHibernate) techHibernate.classList.add('hidden');
     if (techSplit) techSplit.classList.add('hidden');
   }
@@ -2782,9 +3654,22 @@ function updateCreatureList() {
       }
     }
 
+    // Highlight when in food transfer selection mode
+    if (waitingForFoodTarget) {
+      if (tad.id === foodSourceId) {
+        // Source creature - show it's giving food
+        item.style.background = 'rgba(255, 200, 100, 0.3)';
+        item.style.borderColor = 'rgba(255, 200, 100, 0.7)';
+      } else {
+        // Valid target - show it can receive food
+        item.style.background = 'rgba(100, 255, 100, 0.3)';
+        item.style.borderColor = 'rgba(100, 255, 100, 0.7)';
+      }
+    }
+
     // Create creature name/number and support info
     const creatureName = document.createElement('span');
-    const typeIcon = tad.type === 'cell' ? '⬡' : '○';
+    const typeIcon = tad.type === 'cell' ? '⬡' : tad.type === 'bacteria' ? '◎' : '○';
     let nameText = `${typeIcon} #${index + 1}`;
 
     // Add support relationship info
@@ -2848,26 +3733,49 @@ function updateSelectionCount() {
         supportBtn.style.borderColor = '';
       }
     }
+
+    // Show Give Food button when selected creature has food
+    if (selectedTadpoles.size > 0) {
+      const selectedId = Array.from(selectedTadpoles)[0];
+      const selectedTad = myTadpoles.find(t => t.id === selectedId);
+      if (selectedTad && selectedTad.food > 0) {
+        giveFoodBtn.classList.remove('hidden');
+        if (waitingForFoodTarget) {
+          giveFoodBtn.textContent = 'Select target...';
+          giveFoodBtn.style.background = 'rgba(255, 200, 100, 0.3)';
+          giveFoodBtn.style.borderColor = 'rgba(255, 200, 100, 0.7)';
+        } else {
+          giveFoodBtn.textContent = 'Give Food';
+          giveFoodBtn.style.background = '';
+          giveFoodBtn.style.borderColor = '';
+        }
+      } else {
+        giveFoodBtn.classList.add('hidden');
+      }
+    } else {
+      giveFoodBtn.classList.add('hidden');
+    }
   } else {
     supportBtn.classList.add('hidden');
+    giveFoodBtn.classList.add('hidden');
   }
 
   // Hibernate is now in the Evolution tab - keep button hidden
   hibernateBtn.classList.add('hidden');
 
-  // Show Shield button only for Protector cells
+  // Show Shield button only for Protector cells (not while hibernating)
   if (selectedTadpoles.size > 0) {
     const selectedId = Array.from(selectedTadpoles)[0];
     const selectedTad = myTadpoles.find(t => t.id === selectedId);
-    if (selectedTad && selectedTad.type === 'cell' && selectedTad.hasProtector) {
+    if (selectedTad && selectedTad.type === 'cell' && selectedTad.hasProtector && !selectedTad.isHibernating) {
       shieldBtn.classList.remove('hidden');
       // Update button text based on shield state
       if (selectedTad.bubbleShieldActive) {
-        shieldBtn.textContent = 'Deactivate Shield';
+        shieldBtn.textContent = 'Shield ON (-1/hr)';
         shieldBtn.style.background = 'rgba(100, 200, 255, 0.3)';
         shieldBtn.style.borderColor = 'rgba(100, 200, 255, 0.7)';
       } else {
-        shieldBtn.textContent = 'Shield';
+        shieldBtn.textContent = 'Shield (-1/hr)';
         shieldBtn.style.background = '';
         shieldBtn.style.borderColor = '';
       }
@@ -2876,6 +3784,29 @@ function updateSelectionCount() {
     }
   } else {
     shieldBtn.classList.add('hidden');
+  }
+
+  // Show Farm button only for bacteria creatures
+  if (selectedTadpoles.size > 0) {
+    const selectedId = Array.from(selectedTadpoles)[0];
+    const selectedTad = myTadpoles.find(t => t.id === selectedId);
+    if (selectedTad && selectedTad.type === 'bacteria') {
+      farmBtn.classList.remove('hidden');
+      // Update button text based on farming state
+      if (selectedTad.isFarming) {
+        farmBtn.textContent = 'Stop Farming';
+        farmBtn.style.background = 'rgba(100, 255, 100, 0.3)';
+        farmBtn.style.borderColor = 'rgba(100, 255, 100, 0.7)';
+      } else {
+        farmBtn.textContent = 'Farm';
+        farmBtn.style.background = '';
+        farmBtn.style.borderColor = '';
+      }
+    } else {
+      farmBtn.classList.add('hidden');
+    }
+  } else {
+    farmBtn.classList.add('hidden');
   }
 
   // Check if selection changed
@@ -2894,10 +3825,12 @@ function updateSelectionCount() {
   // Only rebuild creature list if something changed
   const creatureCountChanged = myTadpoles.length !== lastCreatureCount;
   const supportModeChanged = waitingForSupportTarget !== lastWaitingForSupport;
+  const foodModeChanged = waitingForFoodTarget !== lastWaitingForFood;
 
-  if (creatureCountChanged || supportModeChanged || selectionChanged) {
+  if (creatureCountChanged || supportModeChanged || foodModeChanged || selectionChanged) {
     lastCreatureCount = myTadpoles.length;
     lastWaitingForSupport = waitingForSupportTarget;
+    lastWaitingForFood = waitingForFoodTarget;
     lastSelectedIds = new Set(selectedTadpoles);
     updateCreatureList();
   }
@@ -2907,6 +3840,29 @@ function updateSelectionCount() {
 function update(deltaTime = 1) {
   if (isDead) return;
 
+  // Test mode: give infinite food to all creatures
+  if (testMode) {
+    myTadpoles.forEach(tad => {
+      const maxFood = tad.type === 'cell' ? CELL_FOOD_CAPACITY : getFoodCapacity(tad);
+      tad.food = maxFood;
+    });
+  }
+
+  // Check for birth animation completion - stop velocity when animation ends
+  const now = Date.now();
+  myTadpoles.forEach(tad => {
+    if (tad.birthTime && tad.birthDuration) {
+      const timeSinceBirth = now - tad.birthTime;
+      if (timeSinceBirth >= tad.birthDuration) {
+        // Birth animation complete - stop movement
+        tad.vx = 0;
+        tad.vy = 0;
+        tad.birthTime = null;
+        tad.birthDuration = null;
+      }
+    }
+  });
+
   // Auto-select single creature (no yellow highlight)
   if (myTadpoles.length === 1 && selectedTadpoles.size === 0) {
     selectedTadpoles.add(myTadpoles[0].id);
@@ -2914,7 +3870,6 @@ function update(deltaTime = 1) {
 
   // Update NPC tails for rendering (NPC behavior is server-controlled)
   const time = Date.now() / 1000;
-  const now = Date.now();
   for (let npc of Object.values(npcs)) {
     // Only update tail animation for tadpoles
     if (npc.type === 'tadpole') {
@@ -3020,6 +3975,9 @@ function update(deltaTime = 1) {
       particle.driftAngle = Math.random() * Math.PI * 2;
     }
   });
+
+  // Track food eaten this frame to prevent multiple tadpoles eating the same food
+  const eatenThisFrame = new Set();
 
   // Update player tadpoles
   for (let tad of myTadpoles) {
@@ -3257,13 +4215,39 @@ function update(deltaTime = 1) {
         const distY = targetY - tad.y;
         const distance = Math.sqrt(distX * distX + distY * distY);
 
+        // Cells with swords turn to face targets (spike-first attack)
+        if (tad.type === 'cell' && tad.hasSword && distance < ATTACK_RANGE * 1.5) {
+          const angleToTarget = Math.atan2(currentAttackTarget.y - tad.y, currentAttackTarget.x - tad.x);
+          // Quickly turn to face target
+          let angleDiff = angleToTarget - (tad.angle || 0);
+          // Normalize to -PI to PI
+          while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+          while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+          tad.angle = (tad.angle || 0) + angleDiff * 0.2; // Turn towards target
+        }
+
         if (distance < ATTACK_RANGE) {
           // In range, attack continuously
           const attackCooldown = tad.type === 'cell' ? CELL_ATTACK_COOLDOWN : TADPOLE_ATTACK_COOLDOWN;
 
           if (Date.now() - tad.lastAttack > attackCooldown) {
-            const baseStrength = playerStrength + (tad.strengthBonus || 0);
-            const damage = baseStrength * (tad.type === 'cell' ? 1.5 : 1);
+            // Calculate damage - include both tadpole and cell strength bonuses
+            let baseStrength = playerStrength + (tad.strengthBonus || 0);
+            if (tad.type === 'cell') {
+              baseStrength += (tad.cellStrengthBonus || 0);
+            }
+            let damage = baseStrength * (tad.type === 'cell' ? 1.5 : 1);
+
+            // Spike-first bonus: if cell has sword and is facing the target, deal massive damage
+            if (tad.type === 'cell' && tad.hasSword) {
+              const angleToTarget = Math.atan2(currentAttackTarget.y - tad.y, currentAttackTarget.x - tad.x);
+              const facingAngle = tad.angle || 0;
+              const angleDiff = Math.abs(((angleToTarget - facingAngle + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+              // If facing within ~45 degrees of target, spike hits first - massive damage
+              if (angleDiff < Math.PI / 4) {
+                damage *= 3; // Triple damage for spike-first hit
+              }
+            }
 
             tad.lastAttack = Date.now();
 
@@ -3276,7 +4260,9 @@ function update(deltaTime = 1) {
             if (npcs[currentAttackTarget.id]) {
               socket.emit('attackNPC', {
                 npcId: currentAttackTarget.id,
-                damage: damage
+                damage: damage,
+                attackerX: tad.x,
+                attackerY: tad.y
               });
               // Don't apply damage locally - server will broadcast npcDamaged event
             } else if (players[currentAttackTarget.id]) {
@@ -3360,16 +4346,23 @@ function update(deltaTime = 1) {
 
         if (distance < ARRIVAL_THRESHOLD) {
           // Arrived - gentle glide to stop with soft correction
-          tad.vx *= 0.95;
-          tad.vy *= 0.95;
+          // Bacteria stop immediately at arrival, others coast
+          if (tad.type === 'bacteria') {
+            dx = 0;
+            dy = 0;
+          } else {
+            tad.vx *= 0.95;
+            tad.vy *= 0.95;
 
-          // Gentle nudge toward exact target to prevent drifting
-          if (distance > 5) {
-            tad.vx += (distX / distance) * 0.015;
-            tad.vy += (distY / distance) * 0.015;
+            // Gentle nudge toward exact target to prevent drifting
+            if (distance > 5) {
+              tad.vx += (distX / distance) * 0.015;
+              tad.vy += (distY / distance) * 0.015;
+            }
           }
-        } else if (distance < decelerationZone) {
+        } else if (distance < decelerationZone && tad.type !== 'bacteria') {
           // Approaching - calculate desired velocity for smooth gliding arrival
+          // Bacteria skip deceleration - they move at constant speed
           const arrivalTime = 35; // More frames = smoother coast
           const desiredVx = distX / arrivalTime;
           const desiredVy = distY / arrivalTime;
@@ -3438,21 +4431,57 @@ function update(deltaTime = 1) {
     }
 
     // Apply movement
-    let moveSpeed = tad.type === 'cell' ? MOVE_SPEED * 0.4 : MOVE_SPEED;
+    let moveSpeed = tad.type === 'cell' ? MOVE_SPEED * 0.4 :
+                    tad.type === 'bacteria' ? MOVE_SPEED * 0.5 : MOVE_SPEED;
 
-    // Protector cells have fixed slow speed - no bonuses apply
+    // Protector cells have fixed slow speed - no bonuses apply, no acceleration
     if (tad.type === 'cell' && tad.hasProtector) {
       // Protectors with active shield cannot move at all
       if (tad.bubbleShieldActive) {
-        moveSpeed = 0;
         tad.vx = 0;
         tad.vy = 0;
+
+        // Shield consumes food at 1 food per hour (1/3600 per second, per physics tick)
+        const SHIELD_FOOD_COST_PER_SECOND = 1 / 3600; // 1 food per hour
+        const foodCost = SHIELD_FOOD_COST_PER_SECOND * PHYSICS_TIMESTEP / 1000;
+        tad.shieldFoodAccumulator = (tad.shieldFoodAccumulator || 0) + foodCost;
+
+        // Deduct whole food units when accumulated
+        if (tad.shieldFoodAccumulator >= 1) {
+          tad.food = Math.max(0, (tad.food || 0) - 1);
+          tad.shieldFoodAccumulator -= 1;
+
+          // Turn off shield if out of food
+          if (tad.food <= 0) {
+            tad.bubbleShieldActive = false;
+            tad.shieldFoodAccumulator = 0;
+            socket.emit('bubbleShield', { oderId: tad.id, active: false });
+          }
+        }
+      } else if (dx !== 0 || dy !== 0) {
+        // Fixed constant speed - SET velocity directly (no acceleration/sprint)
+        const protectorSpeed = 0.4; // Constant slow pace
+        tad.vx = dx * protectorSpeed;
+        tad.vy = dy * protectorSpeed;
+      } else if (!moveTarget && !attackTarget) {
+        // Only stop if there's no target (allow deceleration zone behavior)
+        tad.vx = 0;
+        tad.vy = 0;
+      }
+      // If in deceleration zone (dx=0,dy=0 but have target), let existing velocity coast
+    } else if (tad.type === 'bacteria') {
+      // Bacteria have fixed constant speed - no acceleration/sprint behavior, no coasting
+      const bacteriaSpeed = 0.5; // Constant slow pace
+      if (dx !== 0 || dy !== 0) {
+        tad.vx = dx * bacteriaSpeed;
+        tad.vy = dy * bacteriaSpeed;
       } else {
-        // Fixed slow constant speed - ignores all speed upgrades
-        moveSpeed = MOVE_SPEED * 0.15;
+        // Bacteria stop immediately when no direction input (no coasting)
+        tad.vx = 0;
+        tad.vy = 0;
       }
     } else {
-      // Normal cells get speed bonuses
+      // Normal cells and tadpoles get speed bonuses and acceleration
       // Apply cell speed bonus from upgrades
       if (tad.type === 'cell' && tad.cellSpeedBonus) {
         moveSpeed *= (1 + tad.cellSpeedBonus);
@@ -3464,18 +4493,24 @@ function update(deltaTime = 1) {
           moveSpeed *= (1 + tad.cellSpeedBonus * 0.5); // Additional bonus scales less
         }
       }
-    }
-    if (dx !== 0 || dy !== 0) {
-      tad.vx += dx * moveSpeed;
-      tad.vy += dy * moveSpeed;
+      if (dx !== 0 || dy !== 0) {
+        tad.vx += dx * moveSpeed;
+        tad.vy += dy * moveSpeed;
+      }
     }
 
-    // Friction
-    tad.vx *= FRICTION;
-    tad.vy *= FRICTION;
+    // Friction (skip for Protectors and Bacteria when actively moving - they have fixed speed)
+    const isProtectorActivelyMoving = tad.type === 'cell' && tad.hasProtector && (dx !== 0 || dy !== 0);
+    const isBacteriaActivelyMoving = tad.type === 'bacteria' && (dx !== 0 || dy !== 0);
+    if (!isProtectorActivelyMoving && !isBacteriaActivelyMoving) {
+      tad.vx *= FRICTION;
+      tad.vy *= FRICTION;
+    }
 
-    if (Math.abs(tad.vx) < 0.01) tad.vx = 0;
-    if (Math.abs(tad.vy) < 0.01) tad.vy = 0;
+    // Lower threshold for Protectors to allow slow movement
+    const velThreshold = (tad.type === 'cell' && tad.hasProtector) ? 0.001 : 0.01;
+    if (Math.abs(tad.vx) < velThreshold) tad.vx = 0;
+    if (Math.abs(tad.vy) < velThreshold) tad.vy = 0;
 
     tad.x += tad.vx;
     tad.y += tad.vy;
@@ -3525,6 +4560,9 @@ function update(deltaTime = 1) {
 
     // Check for food collisions
     for (let foodItem of Object.values(food)) {
+      // Skip if already eaten this frame by another tadpole
+      if (eatenThisFrame.has(foodItem.id)) continue;
+
       const dx = tad.x - foodItem.x;
       const dy = tad.y - foodItem.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
@@ -3535,6 +4573,7 @@ function update(deltaTime = 1) {
           const currentNucleotides = tad.nucleotides || 0;
           if (currentNucleotides < 1) {
             tad.nucleotides = 1;
+            eatenThisFrame.add(foodItem.id);
             socket.emit('eatFood', foodItem.id);
           }
         } else {
@@ -3544,10 +4583,32 @@ function update(deltaTime = 1) {
 
           if (currentFood < foodCapacity) {
             tad.food = currentFood + 1;
+            eatenThisFrame.add(foodItem.id);
             socket.emit('eatFood', foodItem.id);
           }
         }
       }
+    }
+
+    // Helper function to check if entity is protected by a bubble shield
+    function isProtectedByShield(entity) {
+      // First check: is this entity itself a protector with active shield?
+      if (entity.type === 'cell' && entity.hasProtector && entity.bubbleShieldActive) {
+        return true;
+      }
+      // Second check: is this entity within another protector's shield radius?
+      for (let protector of myTadpoles) {
+        if (protector.type === 'cell' && protector.hasProtector && protector.bubbleShieldActive) {
+          const shieldRadius = protector.radius * 12;
+          const dx = entity.x - protector.x;
+          const dy = entity.y - protector.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < shieldRadius) {
+            return true;
+          }
+        }
+      }
+      return false;
     }
 
     // Collision with own tadpoles
@@ -3588,6 +4649,9 @@ function update(deltaTime = 1) {
       const minDistance = tad.radius + otherPlayer.radius;
 
       if (distance < minDistance && distance > 0) {
+        // Skip push if entity is protected by shield
+        if (isProtectedByShield(tad)) continue;
+
         // Calculate bounce
         const angle = Math.atan2(dy, dx);
         const overlap = minDistance - distance;
@@ -3614,6 +4678,9 @@ function update(deltaTime = 1) {
       const minDistance = tad.radius + npc.radius;
 
       if (distance < minDistance && distance > 0) {
+        // Skip push if entity is protected by shield
+        if (isProtectedByShield(tad)) continue;
+
         // Calculate bounce
         const angle = Math.atan2(dy, dx);
         const overlap = minDistance - distance;
@@ -3634,10 +4701,34 @@ function update(deltaTime = 1) {
 
     // Health regeneration
     if (Date.now() - tad.lastHit > 1000) {
-      tad.health = Math.min(MAX_HEALTH, tad.health + HEALTH_REGEN_RATE);
+      // Use correct max health based on type
+      const maxHealth = tad.type === 'cell' ? (CELL_MAX_HEALTH + (tad.cellMaxHealthBonus || 0)) :
+                        tad.type === 'bacteria' ? BACTERIA_MAX_HEALTH :
+                        (MAX_HEALTH + (tad.maxHealthBonus || 0));
+      tad.health = Math.min(maxHealth, tad.health + HEALTH_REGEN_RATE);
       // Update playerHealth to track the first tadpole's health
       if (myTadpoles[0] === tad) {
         playerHealth = tad.health;
+      }
+    }
+
+    // Bacteria farming - passive food generation
+    if (tad.type === 'bacteria' && tad.isFarming) {
+      // Slow down while farming (bacteria stays mostly still to farm)
+      tad.vx *= 0.95;
+      tad.vy *= 0.95;
+
+      // Generate food passively (accumulate fractional food, round when displaying)
+      const foodCapacity = BACTERIA_FOOD_CAPACITY;
+      const currentFood = tad.food || 0;
+      if (currentFood < foodCapacity) {
+        // Accumulate fractional food internally
+        tad.farmingAccumulator = (tad.farmingAccumulator || 0) + BACTERIA_FARM_RATE;
+        // When accumulator reaches 1, add 1 food
+        if (tad.farmingAccumulator >= 1) {
+          tad.food = Math.min(Math.floor(currentFood) + 1, foodCapacity);
+          tad.farmingAccumulator -= 1;
+        }
       }
     }
 
@@ -3744,6 +4835,52 @@ function update(deltaTime = 1) {
       }
     }
 
+    // Handle bacteria transformation
+    if (tad.isTransformingToBacteria && tad.transformationStartTime) {
+      // Stop all movement while transforming
+      tad.vx *= 0.9;
+      tad.vy *= 0.9;
+
+      const elapsed = Date.now() - tad.transformationStartTime;
+      const progress = Math.min(elapsed / BACTERIA_TRANSFORMATION_DURATION, 1);
+
+      // Gradually change radius to bacteria size
+      const startRadius = tad.baseRadius || TADPOLE_RADIUS;
+      tad.radius = startRadius + (BACTERIA_RADIUS - startRadius) * progress;
+
+      if (elapsed >= BACTERIA_TRANSFORMATION_DURATION) {
+        // Complete the transformation
+        tad.type = 'bacteria';
+        tad.radius = BACTERIA_RADIUS;
+        tad.color = '#7fbf7f'; // Light green hue
+
+        // Notify server of type change
+        socket.emit('updateType', { type: 'bacteria', radius: BACTERIA_RADIUS });
+
+        // Clear tail and reinitialize
+        tad.tail = null;
+        tad.hairs = null;
+        tad.trail = null;
+
+        // Generate blob shape
+        tad.blobShape = generateBlobShape();
+
+        // Set health for bacteria
+        tad.maxHealth = BACTERIA_MAX_HEALTH;
+        tad.health = BACTERIA_MAX_HEALTH;
+
+        // End transformation
+        tad.isTransformingToBacteria = false;
+        tad.transformationStartTime = null;
+        tad.baseRadius = null;
+
+        // Update UI
+        updateSelectionCount();
+
+        console.log('Transformation complete! Now a bacteria.');
+      }
+    }
+
     // Check death (unless invincibility mode is enabled)
     if (tad.health <= 0 && !invincibilityMode) {
       handleDeath(tad);
@@ -3808,14 +4945,33 @@ function update(deltaTime = 1) {
     selectionMenu.classList.add('hidden');
   }
 
-  // Send position
-  if (myTadpoles.length > 0 && (!update.lastSent || Date.now() - update.lastSent > 50)) {
-    const mainTad = myTadpoles[0];
+  // Send position (only from primary window - secondary windows are view-only)
+  // Send the position of the creature closest to any hostile NPC (so NPCs can attack it)
+  if (!isSecondaryWindow && myTadpoles.length > 0 && (!update.lastSent || Date.now() - update.lastSent > 50)) {
+    let targetTad = myTadpoles[0];
+
+    // Find creature closest to any hostile NPC (for NPC attack targeting)
+    let closestNpcDist = Infinity;
+    for (let npc of Object.values(npcs)) {
+      // Skip friendly/idle NPCs
+      if (npc.isIdlePlayer) continue;
+
+      for (let tad of myTadpoles) {
+        const dx = tad.x - npc.x;
+        const dy = tad.y - npc.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < closestNpcDist) {
+          closestNpcDist = dist;
+          targetTad = tad;
+        }
+      }
+    }
+
     socket.emit('move', {
-      x: mainTad.x,
-      y: mainTad.y,
-      vx: mainTad.vx,
-      vy: mainTad.vy
+      x: targetTad.x,
+      y: targetTad.y,
+      vx: targetTad.vx,
+      vy: targetTad.vy
     });
     update.lastSent = Date.now();
   }
@@ -3864,9 +5020,14 @@ function handleDeath(entity) {
     myTadpoles = myTadpoles.filter(t => t !== entity);
     selectedTadpoles.delete(entity.id);
 
+    // Notify server that player died (clears saved position, resets NPC targeting)
+    socket.emit('playerDied', { x: entity.x, y: entity.y });
+
     if (myTadpoles.length === 0) {
       isDead = true;
       deathScreen.classList.remove('hidden');
+      // Clear saved progress so player starts fresh as tadpole
+      clearProgressOnDeath();
     }
   } else if (npcs[entity.id]) {
     const wasCell = entity.type === 'cell';
@@ -4426,6 +5587,8 @@ function drawEntity(entity, isMe, isNPC, isSelected = false) {
 
   if (entity.type === 'cell') {
     drawCell(entity, isMe, isSelected);
+  } else if (entity.type === 'bacteria') {
+    drawBacteria(entity, isMe, isSelected);
   } else {
     drawTadpole(entity, isMe, isNPC, isSelected);
   }
@@ -4829,10 +5992,16 @@ function drawTadpole(entity, isMe, isNPC, isSelected) {
 
   ctx.restore();
 
-  // Name (only for non-NPCs)
-  if (!isNPC && entity.name) {
-    // Dark green for own creatures, light blue for other players
-    ctx.fillStyle = isMe ? '#2d8659' : '#e8f0ff';
+  // Name (for players and idle players, not regular NPCs)
+  if ((!isNPC || entity.isIdlePlayer) && entity.name) {
+    // Dark green for own creatures, grey for idle players, light blue for other players
+    if (isMe) {
+      ctx.fillStyle = '#2d8659';
+    } else if (entity.isIdlePlayer) {
+      ctx.fillStyle = '#8a8a9a'; // Grey-purple for idle players
+    } else {
+      ctx.fillStyle = '#e8f0ff';
+    }
     ctx.font = 'bold 14px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -5277,29 +6446,111 @@ function drawCell(entity, isMe, isSelected) {
 
   // Draw bubble shield if active
   if (entity.bubbleShieldActive && entity.hasProtector) {
-    const shieldRadius = entity.radius * 4; // Big enough for ~7 cells
+    const shieldRadius = entity.radius * 12; // Large protection area
     const pulseTime = Date.now() / 1000;
-    const pulse = Math.sin(pulseTime * 2) * 0.1 + 1;
 
     ctx.save();
     ctx.translate(x, y);
 
-    // Outer shield ring
-    ctx.strokeStyle = `rgba(100, 200, 255, ${0.4 + Math.sin(pulseTime * 3) * 0.1})`;
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.arc(0, 0, shieldRadius * pulse, 0, Math.PI * 2);
-    ctx.stroke();
+    // Check if this is an inactive/idle player shield
+    if (entity.isIdlePlayer) {
+      // DORMANT SHIELD - Hexagonal crystalline pattern in silver/grey
+      const slowPulse = Math.sin(pulseTime * 0.5) * 0.05 + 1; // Slower, subtler pulse
+      const shimmer = Math.sin(pulseTime * 1.5) * 0.15 + 0.85;
 
-    // Inner glow
-    const gradient = ctx.createRadialGradient(0, 0, shieldRadius * 0.8, 0, 0, shieldRadius);
-    gradient.addColorStop(0, 'rgba(100, 200, 255, 0)');
-    gradient.addColorStop(0.7, 'rgba(100, 200, 255, 0.05)');
-    gradient.addColorStop(1, 'rgba(100, 200, 255, 0.15)');
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.arc(0, 0, shieldRadius, 0, Math.PI * 2);
-    ctx.fill();
+      // Draw hexagonal shield border
+      const hexRadius = shieldRadius * slowPulse;
+      ctx.strokeStyle = `rgba(180, 190, 210, ${0.6 * shimmer})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const angle = (i * Math.PI / 3) - Math.PI / 6;
+        const hx = Math.cos(angle) * hexRadius;
+        const hy = Math.sin(angle) * hexRadius;
+        if (i === 0) ctx.moveTo(hx, hy);
+        else ctx.lineTo(hx, hy);
+      }
+      ctx.closePath();
+      ctx.stroke();
+
+      // Inner hexagonal glow
+      const innerHexRadius = hexRadius * 0.85;
+      ctx.strokeStyle = `rgba(200, 210, 230, ${0.3 * shimmer})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const angle = (i * Math.PI / 3) - Math.PI / 6;
+        const hx = Math.cos(angle) * innerHexRadius;
+        const hy = Math.sin(angle) * innerHexRadius;
+        if (i === 0) ctx.moveTo(hx, hy);
+        else ctx.lineTo(hx, hy);
+      }
+      ctx.closePath();
+      ctx.stroke();
+
+      // Crystalline connecting lines from center to vertices
+      ctx.strokeStyle = `rgba(150, 170, 200, ${0.2 * shimmer})`;
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 6; i++) {
+        const angle = (i * Math.PI / 3) - Math.PI / 6;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(angle) * hexRadius, Math.sin(angle) * hexRadius);
+        ctx.stroke();
+      }
+
+      // Subtle inner fill gradient
+      const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, hexRadius);
+      gradient.addColorStop(0, 'rgba(180, 190, 210, 0.03)');
+      gradient.addColorStop(0.5, 'rgba(150, 170, 200, 0.05)');
+      gradient.addColorStop(1, 'rgba(120, 140, 180, 0.1)');
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const angle = (i * Math.PI / 3) - Math.PI / 6;
+        const hx = Math.cos(angle) * hexRadius;
+        const hy = Math.sin(angle) * hexRadius;
+        if (i === 0) ctx.moveTo(hx, hy);
+        else ctx.lineTo(hx, hy);
+      }
+      ctx.closePath();
+      ctx.fill();
+
+      // Floating rune symbols at vertices (slowly rotating)
+      const runeRotation = pulseTime * 0.2;
+      ctx.font = '10px Arial';
+      ctx.fillStyle = `rgba(200, 210, 230, ${0.4 * shimmer})`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const runeSymbols = ['\u25C6', '\u25C7', '\u25C6', '\u25C7', '\u25C6', '\u25C7']; // Diamond symbols
+      for (let i = 0; i < 6; i++) {
+        const angle = (i * Math.PI / 3) - Math.PI / 6 + runeRotation;
+        const rx = Math.cos(angle) * (hexRadius * 1.1);
+        const ry = Math.sin(angle) * (hexRadius * 1.1);
+        ctx.fillText(runeSymbols[i], rx, ry);
+      }
+
+    } else {
+      // ACTIVE SHIELD - Original blue bubble effect
+      const pulse = Math.sin(pulseTime * 2) * 0.1 + 1;
+
+      // Outer shield ring
+      ctx.strokeStyle = `rgba(100, 200, 255, ${0.4 + Math.sin(pulseTime * 3) * 0.1})`;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(0, 0, shieldRadius * pulse, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Inner glow
+      const gradient = ctx.createRadialGradient(0, 0, shieldRadius * 0.8, 0, 0, shieldRadius);
+      gradient.addColorStop(0, 'rgba(100, 200, 255, 0)');
+      gradient.addColorStop(0.7, 'rgba(100, 200, 255, 0.05)');
+      gradient.addColorStop(1, 'rgba(100, 200, 255, 0.15)');
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(0, 0, shieldRadius, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     ctx.restore();
   }
@@ -5433,10 +6684,16 @@ function drawCell(entity, isMe, isSelected) {
     }
   }
 
-  // Name
+  // Name (for players and idle players)
   if (entity.name) {
-    // Dark green for own creatures, light blue for other players
-    ctx.fillStyle = isMe ? '#2d8659' : '#e8f0ff';
+    // Dark green for own creatures, grey for idle players, light blue for other players
+    if (isMe) {
+      ctx.fillStyle = '#2d8659';
+    } else if (entity.isIdlePlayer) {
+      ctx.fillStyle = '#8a8a9a'; // Grey-purple for idle players
+    } else {
+      ctx.fillStyle = '#e8f0ff';
+    }
     ctx.font = 'bold 14px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -5444,6 +6701,256 @@ function drawCell(entity, isMe, isSelected) {
     ctx.lineWidth = 3;
     ctx.strokeText(entity.name, x, y - entity.radius - 25);
     ctx.fillText(entity.name, x, y - entity.radius - 25);
+  }
+}
+
+// Generate irregular blob shape for bacteria
+function generateBlobShape() {
+  const points = [];
+  const numPoints = 8 + Math.floor(Math.random() * 5); // 8-12 points for irregular shape
+  const baseRadius = 1; // Normalized, will be scaled by actual radius when drawing
+
+  // Generate random offsets for each point to create irregular blob
+  for (let i = 0; i < numPoints; i++) {
+    const angle = (i / numPoints) * Math.PI * 2;
+    // Variation between 0.6 and 1.2 of base radius for irregular shape
+    const radiusVariation = 0.6 + Math.random() * 0.6;
+
+    // Add some "bulges" for kidney-like or amoeba shapes
+    const bulgeChance = Math.random();
+    let bulge = 1;
+    if (bulgeChance > 0.7) {
+      bulge = 1.2 + Math.random() * 0.3; // Occasional bulge
+    } else if (bulgeChance < 0.2) {
+      bulge = 0.7 + Math.random() * 0.2; // Occasional indent
+    }
+
+    points.push({
+      angle: angle,
+      radius: baseRadius * radiusVariation * bulge,
+      // Add small random offset to angle for more irregularity
+      angleOffset: (Math.random() - 0.5) * 0.3
+    });
+  }
+
+  return points;
+}
+
+// Draw bacteria creature
+function drawBacteria(entity, isMe, isSelected) {
+  const x = entity.renderX || entity.x;
+  const y = entity.renderY || entity.y;
+
+  // Initialize blob shape if not present
+  if (!entity.blobShape) {
+    entity.blobShape = generateBlobShape();
+  }
+
+  const time = Date.now() / 1000;
+
+  // Subtle wobble animation
+  const wobbleSpeed = 1.5;
+  const wobbleAmount = 0.03;
+  const wobble = Math.sin(time * wobbleSpeed + (entity.wiggleOffset || 0)) * wobbleAmount;
+
+  // Check if this is an idle NPC (grey coloring)
+  const isIdleNPC = entity.isIdlePlayer || false;
+
+  // Subtle color pulsing for "alive" look
+  const colorPulse = Math.sin(time * 2) * 10;
+  let baseGreen, baseColor;
+  if (isIdleNPC) {
+    // Grey coloring for idle NPCs
+    const greyBase = 140 + colorPulse * 0.3;
+    baseGreen = greyBase;
+    baseColor = `rgb(${Math.floor(greyBase)}, ${Math.floor(greyBase)}, ${Math.floor(greyBase)})`; // Grey
+  } else {
+    baseGreen = 180 + colorPulse;
+    baseColor = `rgb(127, ${Math.floor(baseGreen)}, 127)`; // Light green hue
+  }
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate((entity.angle || 0) + wobble);
+
+  // Draw main blob body
+  ctx.beginPath();
+  const points = entity.blobShape;
+
+  // Use bezier curves for smooth blob shape with slow shape-shifting animation
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    const nextP = points[(i + 1) % points.length];
+
+    // Animated radius and angle offset - each point shifts slowly at different rates
+    const animatedRadius = p.radius + Math.sin(time * 0.3 + i * 1.2) * 0.08 + Math.sin(time * 0.5 + i * 0.7) * 0.05;
+    const animatedAngleOffset = p.angleOffset + Math.sin(time * 0.4 + i * 0.9) * 0.1;
+
+    const nextAnimatedRadius = nextP.radius + Math.sin(time * 0.3 + (i + 1) * 1.2) * 0.08 + Math.sin(time * 0.5 + (i + 1) * 0.7) * 0.05;
+    const nextAnimatedAngleOffset = nextP.angleOffset + Math.sin(time * 0.4 + (i + 1) * 0.9) * 0.1;
+
+    const px = Math.cos(p.angle + animatedAngleOffset) * animatedRadius * entity.radius;
+    const py = Math.sin(p.angle + animatedAngleOffset) * animatedRadius * entity.radius;
+
+    const npx = Math.cos(nextP.angle + nextAnimatedAngleOffset) * nextAnimatedRadius * entity.radius;
+    const npy = Math.sin(nextP.angle + nextAnimatedAngleOffset) * nextAnimatedRadius * entity.radius;
+
+    // Control points for smooth curve
+    const cpx = (px + npx) / 2;
+    const cpy = (py + npy) / 2;
+
+    if (i === 0) {
+      ctx.moveTo(px, py);
+    }
+
+    ctx.quadraticCurveTo(px, py, cpx, cpy);
+  }
+  ctx.closePath();
+
+  // Fill with gradient for depth
+  const gradient = ctx.createRadialGradient(
+    -entity.radius * 0.2, -entity.radius * 0.2, 0,
+    0, 0, entity.radius * 1.2
+  );
+  if (isIdleNPC) {
+    // Grey gradient for idle NPCs
+    const lightGrey = Math.floor(baseGreen + 20);
+    const darkGrey = Math.floor(baseGreen - 30);
+    gradient.addColorStop(0, `rgba(${lightGrey}, ${lightGrey}, ${lightGrey}, 1)`);
+    gradient.addColorStop(0.5, baseColor);
+    gradient.addColorStop(1, `rgba(${darkGrey}, ${darkGrey}, ${darkGrey}, 1)`);
+  } else {
+    gradient.addColorStop(0, `rgba(150, ${Math.floor(baseGreen + 20)}, 150, 1)`); // Lighter center
+    gradient.addColorStop(0.5, baseColor);
+    gradient.addColorStop(1, `rgba(100, ${Math.floor(baseGreen - 30)}, 100, 1)`); // Darker edge
+  }
+
+  ctx.fillStyle = gradient;
+  ctx.fill();
+
+  // Subtle inner membrane effect
+  if (isIdleNPC) {
+    const strokeGrey = Math.floor(baseGreen - 50);
+    ctx.strokeStyle = `rgba(${strokeGrey}, ${strokeGrey}, ${strokeGrey}, 0.5)`;
+  } else {
+    ctx.strokeStyle = `rgba(80, ${Math.floor(baseGreen - 50)}, 80, 0.5)`;
+  }
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Draw small organelle-like dots inside for bacteria texture (use deterministic positions)
+  if (!entity.organelles) {
+    entity.organelles = [];
+    const numOrganelles = 3 + Math.floor(Math.random() * 2);
+    for (let i = 0; i < numOrganelles; i++) {
+      entity.organelles.push({
+        x: (Math.random() - 0.5) * 0.8,
+        y: (Math.random() - 0.5) * 0.8,
+        size: 0.1 + Math.random() * 0.1
+      });
+    }
+  }
+  if (isIdleNPC) {
+    const orgGrey = Math.floor(baseGreen - 20);
+    ctx.fillStyle = `rgba(${orgGrey}, ${orgGrey}, ${orgGrey}, 0.4)`;
+  } else {
+    ctx.fillStyle = `rgba(100, ${Math.floor(baseGreen - 20)}, 100, 0.4)`;
+  }
+  for (let org of entity.organelles) {
+    // Organelles drift slowly inside the bacteria
+    const driftX = Math.sin(time * 0.2 + org.x * 10) * entity.radius * 0.05;
+    const driftY = Math.cos(time * 0.25 + org.y * 10) * entity.radius * 0.05;
+    ctx.beginPath();
+    ctx.arc(org.x * entity.radius + driftX, org.y * entity.radius + driftY, org.size * entity.radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Draw farming indicator if farming
+  if (entity.isFarming) {
+    // Glowing aura while farming
+    const farmPulse = Math.sin(time * 3) * 0.2 + 0.8;
+    const farmGlow = ctx.createRadialGradient(0, 0, entity.radius, 0, 0, entity.radius * 2);
+    farmGlow.addColorStop(0, `rgba(100, 255, 100, ${0.3 * farmPulse})`);
+    farmGlow.addColorStop(0.5, `rgba(100, 255, 100, ${0.15 * farmPulse})`);
+    farmGlow.addColorStop(1, 'rgba(100, 255, 100, 0)');
+    ctx.fillStyle = farmGlow;
+    ctx.beginPath();
+    ctx.arc(0, 0, entity.radius * 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Small sparkles around bacteria
+    const numSparkles = 5;
+    for (let i = 0; i < numSparkles; i++) {
+      const sparkleAngle = (time * 2 + i * Math.PI * 2 / numSparkles) % (Math.PI * 2);
+      const sparkleRadius = entity.radius * 1.3;
+      const sx = Math.cos(sparkleAngle) * sparkleRadius;
+      const sy = Math.sin(sparkleAngle) * sparkleRadius;
+      const sparkleSize = 2 + Math.sin(time * 5 + i) * 1;
+
+      ctx.fillStyle = `rgba(150, 255, 150, ${0.6 * farmPulse})`;
+      ctx.beginPath();
+      ctx.arc(sx, sy, sparkleSize, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  ctx.restore();
+
+  // Selection border
+  if (isSelected && myTadpoles.length > 1) {
+    ctx.strokeStyle = 'rgba(255, 255, 0, 1)'; // Yellow for selected
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, entity.radius + 2, 0, Math.PI * 2);
+    ctx.stroke();
+  } else if (isMe && myTadpoles.length > 1) {
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, entity.radius + 2, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // Name display
+  if (entity.name) {
+    if (isMe) {
+      ctx.fillStyle = '#2d8659';
+    } else if (entity.isIdlePlayer) {
+      ctx.fillStyle = '#8a8a9a';
+    } else {
+      ctx.fillStyle = '#e8f0ff';
+    }
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.lineWidth = 3;
+    ctx.strokeText(entity.name, x, y - entity.radius - 20);
+    ctx.fillText(entity.name, x, y - entity.radius - 20);
+  }
+
+  // Draw food capacity bar
+  if (isMe || entity.isIdlePlayer) {
+    const foodCapacity = BACTERIA_FOOD_CAPACITY;
+    const currentFood = entity.food || 0;
+    const foodPercentage = currentFood / foodCapacity;
+
+    const barWidth = entity.radius * 1.5;
+    const barHeight = 4;
+    const barY = y + entity.radius + 8;
+
+    // Background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.fillRect(x - barWidth / 2, barY, barWidth, barHeight);
+
+    // Food fill (green)
+    ctx.fillStyle = `rgba(100, 200, 100, 0.9)`;
+    ctx.fillRect(x - barWidth / 2, barY, barWidth * foodPercentage, barHeight);
+
+    // Border
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x - barWidth / 2, barY, barWidth, barHeight);
   }
 }
 
@@ -5556,6 +7063,12 @@ function drawMinimap() {
       ctx.fillStyle = 'rgba(255, 100, 100, 0.9)'; // Red for enemy cells
       ctx.fill();
       ctx.restore();
+    } else if (entity.type === 'bacteria') {
+      // Draw irregular blob for bacteria
+      ctx.fillStyle = 'rgba(150, 255, 150, 0.9)'; // Light green for bacteria
+      ctx.beginPath();
+      ctx.arc(mapX, mapY, 3, 0, Math.PI * 2);
+      ctx.fill();
     } else {
       ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
       ctx.beginPath();
@@ -5597,6 +7110,12 @@ function drawMinimap() {
       ctx.fillStyle = 'rgba(100, 255, 100, 1)';
       ctx.fill();
       ctx.restore();
+    } else if (tad.type === 'bacteria') {
+      // Own bacteria - bright green blob
+      ctx.fillStyle = 'rgba(100, 255, 150, 1)';
+      ctx.beginPath();
+      ctx.arc(mapX, mapY, 4, 0, Math.PI * 2);
+      ctx.fill();
     } else {
       ctx.fillStyle = 'rgba(100, 200, 255, 1)';
       ctx.beginPath();
