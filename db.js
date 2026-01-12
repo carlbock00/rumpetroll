@@ -1,9 +1,13 @@
 const Database = require('better-sqlite3');
 const bcrypt = require('bcrypt');
 const path = require('path');
+const fs = require('fs');
 
-// Initialize database
-const dbPath = path.join(__dirname, 'rumpetroll.db');
+// Initialize database - use persistent disk on Render if available
+const persistentPath = '/data/rumpetroll.db';
+const localPath = path.join(__dirname, 'rumpetroll.db');
+const dbPath = fs.existsSync('/data') ? persistentPath : localPath;
+console.log(`Using database at: ${dbPath}`);
 const db = new Database(dbPath);
 
 // Enable foreign keys
