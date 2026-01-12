@@ -164,6 +164,22 @@ router.get('/load-progress', (req, res) => {
   }
 });
 
+// Admin: List all users (requires secret key)
+router.get('/admin/users', (req, res) => {
+  const adminKey = req.headers['x-admin-key'];
+  if (adminKey !== 'rumpetroll-admin-2024') {
+    return res.status(403).json({ success: false, error: 'Unauthorized' });
+  }
+
+  try {
+    const users = userOps.listAll();
+    res.json({ success: true, users });
+  } catch (error) {
+    console.error('Admin list users error:', error);
+    res.status(500).json({ success: false, error: 'Failed to list users' });
+  }
+});
+
 // Admin: Delete user by email (requires secret key)
 router.delete('/admin/user/:email', async (req, res) => {
   const adminKey = req.headers['x-admin-key'];

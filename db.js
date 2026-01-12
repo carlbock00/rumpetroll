@@ -135,6 +135,11 @@ const userOps = {
   // Delete user by ID
   delete(userId) {
     return db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+  },
+
+  // List all users (admin)
+  listAll() {
+    return db.prepare('SELECT id, email, username, created_at, last_login FROM users').all();
   }
 };
 
