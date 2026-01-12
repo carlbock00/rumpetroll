@@ -1,8 +1,8 @@
 {
   "GNQMDrfQ8oK6cwAEAAAF": {
     "id": "GNQMDrfQ8oK6cwAEAAAF",
-    "x": -159.68457100977545,
-    "y": 1102.043069671824,
+    "x": -87.11674775472711,
+    "y": 1115.1627771076694,
     "vx": 0,
     "vy": 0,
     "color": "#a0a0a0",
@@ -29,6 +29,7 @@
     "isSprinting": false,
     "isIdlePlayer": true,
     "hasProtector": true,
-    "bubbleShieldActive": false
+    "bubbleShieldActive": false,
+    "lastMoveTime": 1768187050870
   }
 }

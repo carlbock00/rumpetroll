@@ -75,9 +75,13 @@ router.post('/login', async (req, res) => {
 
 // Logout user
 router.post('/logout', (req, res) => {
-  // Clear session (cookie-session style)
-  req.session = null;
-  res.json({ success: true });
+  req.session.destroy((err) => {
+    if (err) {
+      console.error('Logout error:', err);
+      return res.status(500).json({ success: false, error: 'Logout failed' });
+    }
+    res.json({ success: true });
+  });
 });
 
 // Get current session

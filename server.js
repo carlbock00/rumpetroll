@@ -3,7 +3,7 @@ const http = require('http');
 const socketIO = require('socket.io');
 const fs = require('fs').promises;
 const path = require('path');
-// Note: using cookie-session instead of express-session for Render compatibility
+const session = require('express-session');
 const crypto = require('crypto');
 const { userOps, progressOps } = require('./db');
 
@@ -32,17 +32,16 @@ try {
   console.log('Generated new session secret');
 }
 
-// Session middleware using cookie-session (stores session in cookie, no server-side storage)
-// This works with Render's ephemeral filesystem since no session DB is needed
-const cookieSession = require('cookie-session');
-
-const sessionMiddleware = cookieSession({
-  name: 'session',
-  keys: [SESSION_SECRET],
-  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-  secure: process.env.NODE_ENV === 'production',
-  httpOnly: true,
-  sameSite: 'lax'
+// Session middleware (using memory store - sessions won't persist across restarts)
+const sessionMiddleware = session({
+  secret: SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+  }
 });
 
 // JSON body parser
