@@ -3,7 +3,7 @@ const http = require('http');
 const socketIO = require('socket.io');
 const fs = require('fs').promises;
 const path = require('path');
-const session = require('express-session');
+// Note: using cookie-session instead of express-session for Render compatibility
 const crypto = require('crypto');
 const { userOps, progressOps } = require('./db');
 
@@ -32,26 +32,17 @@ try {
   console.log('Generated new session secret');
 }
 
-// Session middleware with SQLite store for persistence
-const SQLiteStore = require('better-sqlite3-session-store')(session);
-const sessionDb = require('better-sqlite3')(path.join(__dirname, 'sessions.db'));
+// Session middleware using cookie-session (stores session in cookie, no server-side storage)
+// This works with Render's ephemeral filesystem since no session DB is needed
+const cookieSession = require('cookie-session');
 
-const sessionMiddleware = session({
-  store: new SQLiteStore({
-    client: sessionDb,
-    expired: {
-      clear: true,
-      intervalMs: 900000 // Clear expired sessions every 15 min
-    }
-  }),
-  secret: SESSION_SECRET,
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
-    httpOnly: true,
-    maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-  }
+const sessionMiddleware = cookieSession({
+  name: 'session',
+  keys: [SESSION_SECRET],
+  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  secure: process.env.NODE_ENV === 'production',
+  httpOnly: true,
+  sameSite: 'lax'
 });
 
 // JSON body parser

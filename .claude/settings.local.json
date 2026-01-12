@@ -12,7 +12,13 @@
       "Bash(npx acorn:*)",
       "Bash(node --check:*)",
       "Bash(pkill:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(npm install:*)",
+      "Bash(curl:*)",
+      "Bash(sqlite3:*)",
+      "Bash(ls:*)"
     ]
   }
 }
