@@ -584,11 +584,12 @@ function handleNPCDeath(npc) {
     return;
   }
 
-  // Cells drop 1 nucleotide, Tadpoles drop random plankton (2-5)
-  const foodCount = wasCell ? 1 : 2 + Math.floor(Math.random() * 4); // 1 for cells, 2-5 for tadpoles
-  console.log(`NPC ${npc.id} (${npc.type}) died at (${deathX.toFixed(0)}, ${deathY.toFixed(0)}), dropping ${foodCount} food`);
+  // Cells drop 1 nucleotide + 1-2 plankton, Tadpoles drop random plankton (2-5)
+  const planktonCount = wasCell ? 1 + Math.floor(Math.random() * 2) : 2 + Math.floor(Math.random() * 4);
+  console.log(`NPC ${npc.id} (${npc.type}) died at (${deathX.toFixed(0)}, ${deathY.toFixed(0)}), dropping ${wasCell ? '1 nucleotide + ' : ''}${planktonCount} plankton`);
 
-  for (let i = 0; i < foodCount; i++) {
+  // Cells always drop 1 nucleotide
+  if (wasCell) {
     const id = `food_${foodIdCounter++}`;
     const angle = Math.random() * Math.PI * 2;
     const dist = 15 + Math.random() * 15;
@@ -597,10 +598,28 @@ function handleNPCDeath(npc) {
       id,
       x: deathX + Math.cos(angle) * dist,
       y: deathY + Math.sin(angle) * dist,
-      radius: wasCell ? 6 : 4,
-      type: wasCell ? 'nucleotide' : 'plankton',
+      radius: 6,
+      type: 'nucleotide',
       spawnTime: Date.now(),
-      ttl: wasCell ? 90000 + Math.random() * 90000 : 30000 + Math.random() * 60000
+      ttl: 90000 + Math.random() * 90000 // 1.5-3 minutes
+    };
+    io.emit('foodSpawned', food[id]);
+  }
+
+  // Drop plankton (all creatures)
+  for (let i = 0; i < planktonCount; i++) {
+    const id = `food_${foodIdCounter++}`;
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 15 + Math.random() * 15;
+
+    food[id] = {
+      id,
+      x: deathX + Math.cos(angle) * dist,
+      y: deathY + Math.sin(angle) * dist,
+      radius: 4,
+      type: 'plankton',
+      spawnTime: Date.now(),
+      ttl: 30000 + Math.random() * 60000 // 30-90 seconds
     };
     io.emit('foodSpawned', food[id]);
   }
