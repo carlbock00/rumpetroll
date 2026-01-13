@@ -4357,10 +4357,12 @@ function update(deltaTime = 1) {
         const minDecelZone = ARRIVAL_THRESHOLD * 3;
         const decelerationZone = Math.max(minDecelZone, currentSpeed * 25);
 
+        // Check if this is a fixed-speed entity (bacteria or protector cells)
+        const isFixedSpeed = tad.type === 'bacteria' || (tad.type === 'cell' && tad.hasProtector);
+
         if (distance < ARRIVAL_THRESHOLD) {
-          // Arrived - gentle glide to stop with soft correction
-          // Bacteria stop immediately at arrival, others coast
-          if (tad.type === 'bacteria') {
+          // Arrived - fixed-speed entities stop immediately, others coast
+          if (isFixedSpeed) {
             dx = 0;
             dy = 0;
           } else {
@@ -4373,7 +4375,7 @@ function update(deltaTime = 1) {
               tad.vy += (distY / distance) * 0.015;
             }
           }
-        } else if (distance < decelerationZone && tad.type !== 'bacteria') {
+        } else if (distance < decelerationZone && !isFixedSpeed) {
           // Approaching - calculate desired velocity for smooth gliding arrival
           // Bacteria skip deceleration - they move at constant speed
           const arrivalTime = 35; // More frames = smoother coast
@@ -4447,7 +4449,7 @@ function update(deltaTime = 1) {
     let moveSpeed = tad.type === 'cell' ? MOVE_SPEED * 0.4 :
                     tad.type === 'bacteria' ? MOVE_SPEED * 0.5 : MOVE_SPEED;
 
-    // Protector cells have fixed slow speed - no bonuses apply, no acceleration
+    // Protector cells have fixed slow speed - no bonuses apply, no acceleration, no coasting
     if (tad.type === 'cell' && tad.hasProtector) {
       // Protectors with active shield cannot move at all
       if (tad.bubbleShieldActive) {
@@ -4472,16 +4474,15 @@ function update(deltaTime = 1) {
           }
         }
       } else if (dx !== 0 || dy !== 0) {
-        // Fixed constant speed - SET velocity directly (no acceleration/sprint)
+        // Fixed constant speed - SET velocity directly (no acceleration/sprint/coasting)
         const protectorSpeed = 0.4; // Constant slow pace
         tad.vx = dx * protectorSpeed;
         tad.vy = dy * protectorSpeed;
-      } else if (!moveTarget && !attackTarget) {
-        // Only stop if there's no target (allow deceleration zone behavior)
+      } else {
+        // No movement input - stop immediately (protectors don't coast)
         tad.vx = 0;
         tad.vy = 0;
       }
-      // If in deceleration zone (dx=0,dy=0 but have target), let existing velocity coast
     } else if (tad.type === 'bacteria') {
       // Bacteria have fixed constant speed - no acceleration/sprint behavior, no coasting
       const bacteriaSpeed = 0.5; // Constant slow pace
