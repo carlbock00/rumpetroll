@@ -18,7 +18,18 @@ const io = socketIO(server, {
 
 const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, 'players.json');
-const IDLE_NPCS_FILE = path.join(__dirname, 'idle_npcs.json');
+
+// Use persistent disk for idle NPCs and user positions if available (Render.com)
+const PERSISTENT_DATA_DIR = '/data';
+const hasPersistentDisk = require('fs').existsSync(PERSISTENT_DATA_DIR);
+const IDLE_NPCS_FILE = hasPersistentDisk
+  ? path.join(PERSISTENT_DATA_DIR, 'idle_npcs.json')
+  : path.join(__dirname, 'idle_npcs.json');
+const USER_POSITIONS_FILE = hasPersistentDisk
+  ? path.join(PERSISTENT_DATA_DIR, 'user_positions.json')
+  : path.join(__dirname, 'user_positions.json');
+
+console.log(`Using ${hasPersistentDisk ? 'persistent disk' : 'local'} storage for runtime data`);
 
 // Use a persistent session secret (generate once, store in file)
 const SESSION_SECRET_FILE = path.join(__dirname, '.session_secret');
@@ -848,7 +859,7 @@ generateFood(57); // Start with reasonable amount of food (increased 50%)
 // User positions storage - persists across reconnections by username
 // Also stores { diedWhileInactive: true } for users who died while inactive
 let userPositions = {};
-const USER_POSITIONS_FILE = path.join(__dirname, 'user_positions.json');
+// USER_POSITIONS_FILE is defined at the top (uses persistent disk if available)
 
 // Load user positions from file
 async function loadUserPositions() {

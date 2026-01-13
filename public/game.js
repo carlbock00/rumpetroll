@@ -258,9 +258,14 @@ function loadProgressFromServer(progress) {
 
   // Recreate creatures from saved data
   progress.creature_data.forEach((savedTad, index) => {
-    // Validate position - use saved value only if it's a valid finite number
-    const startX = isFinite(savedTad.x) ? savedTad.x : (Math.random() - 0.5) * 500;
-    const startY = isFinite(savedTad.y) ? savedTad.y : (Math.random() - 0.5) * 500;
+    // Validate position - use saved value only if it's a valid finite number (not null/undefined/NaN)
+    const isValidX = typeof savedTad.x === 'number' && isFinite(savedTad.x);
+    const isValidY = typeof savedTad.y === 'number' && isFinite(savedTad.y);
+    const startX = isValidX ? savedTad.x : (Math.random() - 0.5) * 500;
+    const startY = isValidY ? savedTad.y : (Math.random() - 0.5) * 500;
+    if (!isValidX || !isValidY) {
+      console.warn(`Creature ${index} had invalid position (${savedTad.x}, ${savedTad.y}), using random: (${startX}, ${startY})`);
+    }
     // Determine color and radius based on type
     let color = '#FFFFFF';
     let radius = TADPOLE_RADIUS;
@@ -1097,9 +1102,14 @@ socket.on('restoreCreatures', (data) => {
       defaultHealth = BACTERIA_MAX_HEALTH;
     }
 
-    // Validate position
-    const validX = isFinite(creature.x) ? creature.x : (Math.random() - 0.5) * 500;
-    const validY = isFinite(creature.y) ? creature.y : (Math.random() - 0.5) * 500;
+    // Validate position (typeof check needed because isFinite(null) returns true)
+    const isValidX = typeof creature.x === 'number' && isFinite(creature.x);
+    const isValidY = typeof creature.y === 'number' && isFinite(creature.y);
+    const validX = isValidX ? creature.x : (Math.random() - 0.5) * 500;
+    const validY = isValidY ? creature.y : (Math.random() - 0.5) * 500;
+    if (!isValidX || !isValidY) {
+      console.warn(`Restored creature ${index} had invalid position, using random`);
+    }
 
     const tad = {
       id: creature.id || `restored_${Date.now()}_${index}`,
@@ -1223,9 +1233,14 @@ socket.on('init', async (data) => {
         defaultHealth = BACTERIA_MAX_HEALTH;
       }
 
-      // Validate position
-      const validX = isFinite(creature.x) ? creature.x : (Math.random() - 0.5) * 500;
-      const validY = isFinite(creature.y) ? creature.y : (Math.random() - 0.5) * 500;
+      // Validate position (typeof check needed because isFinite(null) returns true)
+      const isValidX = typeof creature.x === 'number' && isFinite(creature.x);
+      const isValidY = typeof creature.y === 'number' && isFinite(creature.y);
+      const validX = isValidX ? creature.x : (Math.random() - 0.5) * 500;
+      const validY = isValidY ? creature.y : (Math.random() - 0.5) * 500;
+      if (!isValidX || !isValidY) {
+        console.warn(`Init creature ${index} had invalid position, using random`);
+      }
 
       const tad = {
         id: creature.id || `creature_${index}`,
