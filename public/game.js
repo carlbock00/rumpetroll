@@ -73,7 +73,7 @@ async function checkSession() {
 }
 
 // Update UI based on login state
-function updateUserUI() {
+function updateUserUI(isNewRegistration = false) {
   if (currentUser) {
     userStatus.innerHTML = `
       <div class="user-info">
@@ -88,9 +88,9 @@ function updateUserUI() {
         tad.name = currentUser.username;
       });
     }
-    // Emit to server
+    // Emit to server (pass isNewRegistration to prevent restoring stale idle NPCs)
     if (typeof socket !== 'undefined' && socket.connected) {
-      socket.emit('setName', currentUser.username);
+      socket.emit('setName', { name: currentUser.username, isNewRegistration });
     }
   } else {
     userStatus.innerHTML = '<button id="loginBtn" class="auth-btn">Login</button>';
@@ -139,7 +139,7 @@ async function register(username, email, password) {
     if (data.success) {
       currentUser = data.user;
       loginModal.classList.add('hidden');
-      updateUserUI();
+      updateUserUI(true); // true = new registration, don't restore old idle NPCs
     } else {
       registerError.textContent = data.error || 'Registration failed';
     }

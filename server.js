@@ -1246,7 +1246,10 @@ io.on('connection', (socket) => {
   });
 
   // Handle player name change (simplified - connection handler does restoration for logged-in users)
-  socket.on('setName', (name) => {
+  socket.on('setName', (data) => {
+    // Support both old format (string) and new format (object)
+    const name = typeof data === 'string' ? data : data.name;
+    const isNewRegistration = typeof data === 'object' ? data.isNewRegistration : false;
     const cleanName = name.substring(0, 20); // Limit name length
 
     // If this socket is already tracked as a secondary, ignore setName
@@ -1330,7 +1333,17 @@ io.on('connection', (socket) => {
       }
     }
 
-    if (userIdleNpcs.length > 0) {
+    // If this is a NEW registration, delete any stale idle NPCs with this username
+    // (they're from a deleted/old account and shouldn't be restored)
+    if (isNewRegistration && userIdleNpcs.length > 0) {
+      console.log(`setName: New registration - clearing ${userIdleNpcs.length} stale idle NPCs for ${cleanName}`);
+      userIdleNpcs.forEach(({ id, npc }) => {
+        io.emit('npcDied', { id: id, x: npc.x, y: npc.y, radius: npc.radius });
+        delete npcs[id];
+      });
+      saveIdleNpcs();
+      // Don't restore - let them start fresh as a tadpole
+    } else if (userIdleNpcs.length > 0) {
       console.log(`setName: Restoring ${userIdleNpcs.length} creatures for ${cleanName}`);
 
       // Build creatures array for client (include all upgrade data)
