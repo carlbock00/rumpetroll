@@ -586,6 +586,7 @@ function handleNPCDeath(npc) {
 
   // Cells drop 1 nucleotide, Tadpoles drop random plankton (2-5)
   const foodCount = wasCell ? 1 : 2 + Math.floor(Math.random() * 4); // 1 for cells, 2-5 for tadpoles
+  console.log(`NPC ${npc.id} (${npc.type}) died at (${deathX.toFixed(0)}, ${deathY.toFixed(0)}), dropping ${foodCount} food`);
 
   for (let i = 0; i < foodCount; i++) {
     const id = `food_${foodIdCounter++}`;
