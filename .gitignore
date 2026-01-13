@@ -6,4 +6,8 @@ npm-debug.log
 # SQLite database
 *.db
 rumpetroll.db
-*.db
+
+# Runtime data files
+.session_secret
+idle_npcs.json
+user_positions.json
