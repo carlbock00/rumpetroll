@@ -258,8 +258,9 @@ function loadProgressFromServer(progress) {
 
   // Recreate creatures from saved data
   progress.creature_data.forEach((savedTad, index) => {
-    const startX = savedTad.x !== undefined ? savedTad.x : (Math.random() - 0.5) * 500;
-    const startY = savedTad.y !== undefined ? savedTad.y : (Math.random() - 0.5) * 500;
+    // Validate position - use saved value only if it's a valid finite number
+    const startX = isFinite(savedTad.x) ? savedTad.x : (Math.random() - 0.5) * 500;
+    const startY = isFinite(savedTad.y) ? savedTad.y : (Math.random() - 0.5) * 500;
     // Determine color and radius based on type
     let color = '#FFFFFF';
     let radius = TADPOLE_RADIUS;
@@ -1096,12 +1097,16 @@ socket.on('restoreCreatures', (data) => {
       defaultHealth = BACTERIA_MAX_HEALTH;
     }
 
+    // Validate position
+    const validX = isFinite(creature.x) ? creature.x : (Math.random() - 0.5) * 500;
+    const validY = isFinite(creature.y) ? creature.y : (Math.random() - 0.5) * 500;
+
     const tad = {
       id: creature.id || `restored_${Date.now()}_${index}`,
-      x: creature.x,
-      y: creature.y,
-      renderX: creature.x,
-      renderY: creature.y,
+      x: validX,
+      y: validY,
+      renderX: validX,
+      renderY: validY,
       vx: 0,
       vy: 0,
       color: defaultColor,
@@ -1218,12 +1223,16 @@ socket.on('init', async (data) => {
         defaultHealth = BACTERIA_MAX_HEALTH;
       }
 
+      // Validate position
+      const validX = isFinite(creature.x) ? creature.x : (Math.random() - 0.5) * 500;
+      const validY = isFinite(creature.y) ? creature.y : (Math.random() - 0.5) * 500;
+
       const tad = {
         id: creature.id || `creature_${index}`,
-        x: creature.x,
-        y: creature.y,
-        renderX: creature.x,
-        renderY: creature.y,
+        x: validX,
+        y: validY,
+        renderX: validX,
+        renderY: validY,
         vx: 0,
         vy: 0,
         color: defaultColor,
