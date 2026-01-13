@@ -5,6 +5,8 @@ const fs = require('fs').promises;
 const path = require('path');
 const session = require('express-session');
 const crypto = require('crypto');
+const Database = require('better-sqlite3');
+const SqliteStore = require('better-sqlite3-session-store')(session);
 const { userOps, progressOps } = require('./db');
 
 const app = express();
@@ -32,7 +34,9 @@ const USER_POSITIONS_FILE = hasPersistentDisk
 console.log(`Using ${hasPersistentDisk ? 'persistent disk' : 'local'} storage for runtime data`);
 
 // Use a persistent session secret (generate once, store in file)
-const SESSION_SECRET_FILE = path.join(__dirname, '.session_secret');
+const SESSION_SECRET_FILE = hasPersistentDisk
+  ? path.join(PERSISTENT_DATA_DIR, '.session_secret')
+  : path.join(__dirname, '.session_secret');
 let SESSION_SECRET;
 try {
   SESSION_SECRET = require('fs').readFileSync(SESSION_SECRET_FILE, 'utf8').trim();
@@ -43,8 +47,26 @@ try {
   console.log('Generated new session secret');
 }
 
-// Session middleware (using memory store - sessions won't persist across restarts)
+// Session database path (use persistent disk if available)
+const SESSION_DB_PATH = hasPersistentDisk
+  ? path.join(PERSISTENT_DATA_DIR, 'sessions.db')
+  : path.join(__dirname, 'sessions.db');
+
+// Create session store with SQLite (persists across server restarts)
+const sessionDb = new Database(SESSION_DB_PATH);
+const sessionStore = new SqliteStore({
+  client: sessionDb,
+  expired: {
+    clear: true,
+    intervalMs: 900000 // Clear expired sessions every 15 minutes
+  }
+});
+
+console.log(`Sessions stored in: ${SESSION_DB_PATH}`);
+
+// Session middleware (using SQLite store - sessions persist across restarts)
 const sessionMiddleware = session({
+  store: sessionStore,
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
