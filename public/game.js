@@ -826,6 +826,27 @@ creatureList.addEventListener('click', (e) => {
   }
 });
 
+// Double-click on creature list to center camera on that creature (useful for finding lost ones)
+creatureList.addEventListener('dblclick', (e) => {
+  let creatureItem = e.target;
+  while (creatureItem && !creatureItem.classList.contains('creature-item')) {
+    creatureItem = creatureItem.parentElement;
+    if (creatureItem === creatureList || !creatureItem) {
+      return;
+    }
+  }
+
+  if (creatureItem && creatureItem.classList.contains('creature-item')) {
+    const creatureIndex = parseInt(creatureItem.getAttribute('data-creature-index'));
+    const tad = myTadpoles[creatureIndex];
+    if (tad) {
+      // Center camera on this creature
+      camera.x = tad.x;
+      camera.y = tad.y;
+    }
+  }
+});
+
 // Set canvas size to fill screen
 function resizeCanvas() {
   canvas.width = window.innerWidth;
@@ -4220,7 +4241,7 @@ function update(deltaTime = 1) {
 
       // Attack target - all selected tadpoles attack continuously
       if (currentAttackTarget) {
-        // Apply formation offset to attack position
+        // Apply formation offset to attack position (where creature moves to)
         const targetX = currentAttackTarget.x + formationOffset.x;
         const targetY = currentAttackTarget.y + formationOffset.y;
 
@@ -4228,8 +4249,13 @@ function update(deltaTime = 1) {
         const distY = targetY - tad.y;
         const distance = Math.sqrt(distX * distX + distY * distY);
 
+        // Calculate actual distance to target (not formation position) for attack range
+        const actualDistX = currentAttackTarget.x - tad.x;
+        const actualDistY = currentAttackTarget.y - tad.y;
+        const actualDistance = Math.sqrt(actualDistX * actualDistX + actualDistY * actualDistY);
+
         // Cells with swords turn to face targets (spike-first attack)
-        if (tad.type === 'cell' && tad.hasSword && distance < ATTACK_RANGE * 1.5) {
+        if (tad.type === 'cell' && tad.hasSword && actualDistance < ATTACK_RANGE * 1.5) {
           const angleToTarget = Math.atan2(currentAttackTarget.y - tad.y, currentAttackTarget.x - tad.x);
           // Quickly turn to face target
           let angleDiff = angleToTarget - (tad.angle || 0);
@@ -4239,8 +4265,8 @@ function update(deltaTime = 1) {
           tad.angle = (tad.angle || 0) + angleDiff * 0.2; // Turn towards target
         }
 
-        if (distance < ATTACK_RANGE) {
-          // In range, attack continuously
+        if (actualDistance < ATTACK_RANGE) {
+          // In range of actual target, attack continuously
           const attackCooldown = tad.type === 'cell' ? CELL_ATTACK_COOLDOWN : TADPOLE_ATTACK_COOLDOWN;
 
           if (Date.now() - tad.lastAttack > attackCooldown) {
@@ -4528,6 +4554,16 @@ function update(deltaTime = 1) {
 
     tad.x += tad.vx;
     tad.y += tad.vy;
+
+    // Sanity check: reset position if it becomes invalid (NaN/Infinity)
+    if (!isFinite(tad.x) || !isFinite(tad.y)) {
+      console.warn('Creature position became invalid, resetting to camera position');
+      tad.x = camera.x || 0;
+      tad.y = camera.y || 0;
+      tad.vx = 0;
+      tad.vy = 0;
+    }
+
     tad.renderX = tad.x;
     tad.renderY = tad.y;
 
