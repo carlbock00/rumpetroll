@@ -3194,20 +3194,24 @@ function handleEvolutionAction(actionId) {
     setTimeout(() => {
       if (!selectedTad.isSplitting) return; // Cancelled
 
+      // Use parent's angle (default to random if undefined)
+      const parentAngle = selectedTad.angle !== undefined ? selectedTad.angle : Math.random() * Math.PI * 2;
+      const spawnAngle = parentAngle + Math.PI; // Spawn behind parent
+
       // Create new cell - virgin with no upgrades
       const newCell = {
         id: `cell_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        x: selectedTad.x + Math.cos(selectedTad.angle + Math.PI) * selectedTad.radius * 2.5,
-        y: selectedTad.y + Math.sin(selectedTad.angle + Math.PI) * selectedTad.radius * 2.5,
+        x: selectedTad.x + Math.cos(spawnAngle) * (selectedTad.radius || 40) * 2.5,
+        y: selectedTad.y + Math.sin(spawnAngle) * (selectedTad.radius || 40) * 2.5,
         vx: 0,
         vy: 0,
-        radius: selectedTad.radius,
+        radius: selectedTad.radius || 40,
         color: selectedTad.color,
         name: selectedTad.name + "'",
         type: 'cell',
         health: CELL_MAX_HEALTH, // Full health for new cell
         food: 0,
-        angle: selectedTad.angle + Math.PI,
+        angle: spawnAngle,
         wiggleOffset: Math.random() * Math.PI * 2,
         // No upgrades - virgin cell
         cellHealthLevel: 0,
@@ -3225,6 +3229,17 @@ function handleEvolutionAction(actionId) {
         birthTime: Date.now(),
         birthDuration: 800
       };
+
+      // Validate position - if invalid, spawn near parent
+      if (!isFinite(newCell.x) || !isFinite(newCell.y)) {
+        console.warn('New cell had invalid position, spawning near parent');
+        newCell.x = (selectedTad.x || 0) + 50;
+        newCell.y = (selectedTad.y || 0) + 50;
+      }
+
+      // Initialize render position
+      newCell.renderX = newCell.x;
+      newCell.renderY = newCell.y;
 
       // Halve original cell's health
       selectedTad.health = Math.floor((selectedTad.health || CELL_MAX_HEALTH) / 2);
