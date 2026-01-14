@@ -4679,7 +4679,9 @@ function update(deltaTime = 1) {
       const dy = tad.y - foodItem.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
 
-      if (distance < tad.radius + foodItem.radius) {
+      // Add pickup buffer so you don't have to move exactly over food
+      const FOOD_PICKUP_BUFFER = 15;
+      if (distance < tad.radius + foodItem.radius + FOOD_PICKUP_BUFFER) {
         if (foodItem.type === 'nucleotide') {
           // Nucleotides: max 1 per creature
           const currentNucleotides = tad.nucleotides || 0;

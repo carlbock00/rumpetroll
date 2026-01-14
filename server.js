@@ -392,8 +392,9 @@ function updateNPC(npc) {
     if (nearestFood) {
       isSeekingFood = true;
 
-      // Check if close enough to eat
-      const eatRange = npc.radius + nearestFood.radius;
+      // Check if close enough to eat (with pickup buffer for easier collection)
+      const FOOD_PICKUP_BUFFER = 15;
+      const eatRange = npc.radius + nearestFood.radius + FOOD_PICKUP_BUFFER;
       if (nearestFoodDist < eatRange) {
         // Eat the food
         io.emit('foodEaten', { foodId: nearestFood.id });
