@@ -318,20 +318,25 @@ function updateNPC(npc) {
       const protector = players[protectorId];
       if (!protector) continue;
       if (protector.hasProtector && protector.bubbleShieldActive) {
-        // Find the protector cell's position (could be primary or secondary creature)
+        // Find the protector cell's position and radius (could be primary or secondary creature)
         let shieldX = protector.x;
         let shieldY = protector.y;
+        let cellRadius = 40; // Default cell radius
 
-        // If protector's primary isn't a cell, check secondary creatures for the protector cell
-        if (protector.type !== 'cell' && protector.creatures) {
+        // If protector's primary is a cell, use its position and radius
+        if (protector.type === 'cell') {
+          cellRadius = protector.radius || 40;
+        } else if (protector.creatures) {
+          // Primary isn't a cell - find the protector cell among secondary creatures
           const protectorCell = protector.creatures.find(c => c.type === 'cell' && c.hasProtector);
           if (protectorCell && protectorCell.x !== undefined) {
             shieldX = protectorCell.x;
             shieldY = protectorCell.y;
+            cellRadius = protectorCell.radius || 40;
           }
         }
 
-        const shieldRadius = (protector.radius || 40) * 12;
+        const shieldRadius = cellRadius * 12;
         const shieldDx = targetX - shieldX;
         const shieldDy = targetY - shieldY;
         const shieldDist = Math.sqrt(shieldDx * shieldDx + shieldDy * shieldDy);
