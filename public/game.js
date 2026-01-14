@@ -4587,12 +4587,13 @@ function update(deltaTime = 1) {
 
       // Attack target - all selected tadpoles attack continuously
       // First check if target is still valid (alive and exists)
-      if (currentAttackTarget) {
+      let activeAttackTarget = currentAttackTarget;
+      if (activeAttackTarget) {
         // Check if target is dead or no longer exists
-        const targetIsDead = currentAttackTarget.health <= 0;
-        const targetIsNPC = npcs[currentAttackTarget.id] !== undefined;
-        const targetIsPlayer = players[currentAttackTarget.id] !== undefined;
-        const targetExists = targetIsNPC || targetIsPlayer || myTadpoles.includes(currentAttackTarget);
+        const targetIsDead = activeAttackTarget.health <= 0;
+        const targetIsNPC = npcs[activeAttackTarget.id] !== undefined;
+        const targetIsPlayer = players[activeAttackTarget.id] !== undefined;
+        const targetExists = targetIsNPC || targetIsPlayer || myTadpoles.includes(activeAttackTarget);
 
         if (targetIsDead || !targetExists) {
           // Clear the attack target
@@ -4600,27 +4601,27 @@ function update(deltaTime = 1) {
             attackTarget = null;
           }
           // Skip attack logic for this frame
-          currentAttackTarget = null;
+          activeAttackTarget = null;
         }
       }
 
-      if (currentAttackTarget) {
+      if (activeAttackTarget) {
         // Apply formation offset to attack position (where creature moves to)
-        const targetX = currentAttackTarget.x + formationOffset.x;
-        const targetY = currentAttackTarget.y + formationOffset.y;
+        const targetX = activeAttackTarget.x + formationOffset.x;
+        const targetY = activeAttackTarget.y + formationOffset.y;
 
         const distX = targetX - tad.x;
         const distY = targetY - tad.y;
         const distance = Math.sqrt(distX * distX + distY * distY);
 
         // Calculate actual distance to target (not formation position) for attack range
-        const actualDistX = currentAttackTarget.x - tad.x;
-        const actualDistY = currentAttackTarget.y - tad.y;
+        const actualDistX = activeAttackTarget.x - tad.x;
+        const actualDistY = activeAttackTarget.y - tad.y;
         const actualDistance = Math.sqrt(actualDistX * actualDistX + actualDistY * actualDistY);
 
         // Cells with swords turn to face targets (spike-first attack)
         if (tad.type === 'cell' && tad.hasSword && actualDistance < ATTACK_RANGE * 1.5) {
-          const angleToTarget = Math.atan2(currentAttackTarget.y - tad.y, currentAttackTarget.x - tad.x);
+          const angleToTarget = Math.atan2(activeAttackTarget.y - tad.y, activeAttackTarget.x - tad.x);
           // Quickly turn to face target
           let angleDiff = angleToTarget - (tad.angle || 0);
           // Normalize to -PI to PI
@@ -4643,7 +4644,7 @@ function update(deltaTime = 1) {
 
             // Spike-first bonus: if cell has sword and is facing the target, deal massive damage
             if (tad.type === 'cell' && tad.hasSword) {
-              const angleToTarget = Math.atan2(currentAttackTarget.y - tad.y, currentAttackTarget.x - tad.x);
+              const angleToTarget = Math.atan2(activeAttackTarget.y - tad.y, activeAttackTarget.x - tad.x);
               const facingAngle = tad.angle || 0;
               const angleDiff = Math.abs(((angleToTarget - facingAngle + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
               // If facing within ~45 degrees of target, spike hits first - massive damage
@@ -4656,45 +4657,45 @@ function update(deltaTime = 1) {
 
             // Start attack animation (lunge)
             tad.attackLungeTime = Date.now();
-            const angle = Math.atan2(currentAttackTarget.y - tad.y, currentAttackTarget.x - tad.x);
+            const angle = Math.atan2(activeAttackTarget.y - tad.y, activeAttackTarget.x - tad.x);
             tad.attackLungeAngle = angle;
 
             // If attacking an NPC, send to server (server handles damage, death, provoke)
-            if (npcs[currentAttackTarget.id]) {
+            if (npcs[activeAttackTarget.id]) {
               socket.emit('attackNPC', {
-                npcId: currentAttackTarget.id,
+                npcId: activeAttackTarget.id,
                 damage: damage,
                 attackerX: tad.x,
                 attackerY: tad.y
               });
               // Don't apply damage locally - server will broadcast npcDamaged event
-            } else if (players[currentAttackTarget.id]) {
+            } else if (players[activeAttackTarget.id]) {
               // Attacking another player - send to server to forward to them
               socket.emit('attackPlayer', {
-                targetId: currentAttackTarget.id,
+                targetId: activeAttackTarget.id,
                 damage: damage,
                 knockbackX: Math.cos(angle) * 1,
                 knockbackY: Math.sin(angle) * 1
               });
               // Show damage text locally for attacker feedback
-              spawnDamageText(currentAttackTarget.x, currentAttackTarget.y, damage);
+              spawnDamageText(activeAttackTarget.x, activeAttackTarget.y, damage);
             } else {
               // Attacking local entity (own tadpole?) - apply damage locally
-              currentAttackTarget.health -= damage;
-              currentAttackTarget.lastHit = Date.now();
+              activeAttackTarget.health -= damage;
+              activeAttackTarget.lastHit = Date.now();
 
               // Spawn damage text
-              spawnDamageText(currentAttackTarget.x, currentAttackTarget.y, damage);
+              spawnDamageText(activeAttackTarget.x, activeAttackTarget.y, damage);
 
               // Bounce target
-              currentAttackTarget.vx += Math.cos(angle) * 1;
-              currentAttackTarget.vy += Math.sin(angle) * 1;
+              activeAttackTarget.vx += Math.cos(angle) * 1;
+              activeAttackTarget.vy += Math.sin(angle) * 1;
 
               // Check if target died
-              if (currentAttackTarget.health <= 0) {
-                const deathX = currentAttackTarget.x;
-                const deathY = currentAttackTarget.y;
-                handleDeath(currentAttackTarget);
+              if (activeAttackTarget.health <= 0) {
+                const deathX = activeAttackTarget.x;
+                const deathY = activeAttackTarget.y;
+                handleDeath(activeAttackTarget);
 
                 // Tell supporting creatures to collect food from this kill
                 myTadpoles.forEach(supportingTad => {
@@ -4705,7 +4706,7 @@ function update(deltaTime = 1) {
                 });
 
                 // Only clear global attackTarget if not in support mode
-                if (!tad.supportMode && attackTarget === currentAttackTarget) {
+                if (!tad.supportMode && attackTarget === activeAttackTarget) {
                   attackTarget = null;
                 }
               }
