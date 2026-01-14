@@ -918,6 +918,21 @@ setInterval(() => {
 
     // Never despawn idle player NPCs - they persist until killed
     if (npc.isIdlePlayer) {
+      // But DO remove idle NPCs for users who are currently connected (bug safeguard)
+      const ownerName = npc.ownerName || npc.name;
+      if (ownerName) {
+        // Check if this user has an active player connection
+        for (let playerId in players) {
+          const player = players[playerId];
+          if (player.name === ownerName) {
+            // This idle NPC's owner is connected - remove the idle NPC
+            console.log(`Removing stale idle NPC for connected user ${ownerName}: ${npcId}`);
+            io.emit('npcDied', { id: npcId, x: npc.x, y: npc.y, radius: npc.radius });
+            delete npcs[npcId];
+            break;
+          }
+        }
+      }
       // Don't count idle players toward NPC limits
       continue;
     }
