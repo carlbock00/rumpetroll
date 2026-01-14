@@ -278,39 +278,46 @@
                       </div>
                     </div>
 
-                    <div class="branch-connector"></div>
+                    <!-- Split into Hibernate and Lipid branches -->
+                    <div class="storage-sub-branches">
+                      <div class="sub-branch-lines"></div>
 
-                    <div class="tech-node cell-tech locked" id="cellTechLipid" data-type="cellCapacity" data-level="2">
-                      <div class="tech-node-inner">
-                        <div class="tech-icon">🫧</div>
-                        <div class="tech-name">Lipid Drops</div>
-                        <div class="tech-desc">Fat energy reserves</div>
-                        <div class="tech-effect">+15 capacity</div>
-                        <div class="tech-cost"><span id="cellLipidCost">10</span> food</div>
+                      <!-- Hibernate branch (left) -->
+                      <div class="sub-branch hibernate-branch">
+                        <div class="tech-node cell-tech locked" id="cellTechHibernate" data-type="cellHibernate" data-level="2">
+                          <div class="tech-node-inner">
+                            <div class="tech-icon">💤</div>
+                            <div class="tech-name">Hibernate</div>
+                            <div class="tech-desc">Deep sleep ability</div>
+                            <div class="tech-effect">Birth offspring</div>
+                            <div class="tech-cost"><span id="cellHibernateCost">10</span> food</div>
+                          </div>
+                        </div>
                       </div>
-                    </div>
 
-                    <div class="branch-connector"></div>
+                      <!-- Lipid/Glycogen branch (right) -->
+                      <div class="sub-branch lipid-branch">
+                        <div class="tech-node cell-tech locked" id="cellTechLipid" data-type="cellCapacity" data-level="2">
+                          <div class="tech-node-inner">
+                            <div class="tech-icon">🫧</div>
+                            <div class="tech-name">Lipid Drops</div>
+                            <div class="tech-desc">Fat energy reserves</div>
+                            <div class="tech-effect">+15 capacity</div>
+                            <div class="tech-cost"><span id="cellLipidCost">10</span> food</div>
+                          </div>
+                        </div>
 
-                    <div class="tech-node cell-tech locked" id="cellTechGlycogen" data-type="cellCapacity" data-level="3">
-                      <div class="tech-node-inner">
-                        <div class="tech-icon">🔋</div>
-                        <div class="tech-name">Glycogen</div>
-                        <div class="tech-desc">Sugar stockpile</div>
-                        <div class="tech-effect">+20 capacity</div>
-                        <div class="tech-cost"><span id="cellGlycogenCost">15</span> food</div>
-                      </div>
-                    </div>
+                        <div class="branch-connector"></div>
 
-                    <div class="branch-connector"></div>
-
-                    <div class="tech-node cell-tech locked" id="cellTechHibernate" data-type="cellHibernate" data-level="4">
-                      <div class="tech-node-inner">
-                        <div class="tech-icon">💤</div>
-                        <div class="tech-name">Hibernate</div>
-                        <div class="tech-desc">Deep sleep ability</div>
-                        <div class="tech-effect">Birth offspring</div>
-                        <div class="tech-cost"><span id="cellHibernateCost">20</span> food</div>
+                        <div class="tech-node cell-tech locked" id="cellTechGlycogen" data-type="cellCapacity" data-level="3">
+                          <div class="tech-node-inner">
+                            <div class="tech-icon">🔋</div>
+                            <div class="tech-name">Glycogen</div>
+                            <div class="tech-desc">Sugar stockpile</div>
+                            <div class="tech-effect">+20 capacity</div>
+                            <div class="tech-cost"><span id="cellGlycogenCost">15</span> food</div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -433,21 +440,8 @@
               </div>
             </div>
 
-            <!-- Bacteria - Transform into Bacteria (for tadpoles) -->
-            <div class="evolution-option locked" id="techBacteria" data-type="transformBacteria">
-              <div class="evolution-icon">🦠</div>
-              <div class="evolution-content">
-                <div class="evolution-name">Prokaryosis</div>
-                <div class="evolution-desc">Transform into a Bacteria</div>
-                <div class="evolution-stats">
-                  <span>• Irregular blob shape</span>
-                  <span>• Can passively farm food</span>
-                  <span>• Slower movement</span>
-                </div>
-                <div class="evolution-requires">Requires: Nucleus</div>
-                <div class="evolution-cost"><span id="bacteriaCost">15</span> food + 1 nucleotide</div>
-              </div>
-            </div>
+            <!-- Bacteria - Transform into Bacteria (only via cell hibernation now) -->
+            <!-- Removed from tadpole menu - Prokaryosis is now only available through cell hibernation -->
 
             <!-- Hibernate - Cell only -->
             <div class="evolution-option hidden" id="techHibernate" data-type="hibernate">
@@ -491,6 +485,38 @@
       <span id="healthUpgradeCost" class="hidden">5</span>
       <span id="strengthUpgradeCost" class="hidden">5</span>
       <span id="capacityUpgradeCost" class="hidden">3</span>
+    </div>
+  </div>
+
+  <!-- Hibernation Menu - appears when cell is hibernating -->
+  <div id="hibernationMenu" class="hibernation-menu hidden">
+    <div class="hibernation-container">
+      <h2>Hibernating...</h2>
+      <div class="hibernation-timer">
+        <div class="timer-bar">
+          <div class="timer-fill" id="hibernationTimerFill"></div>
+        </div>
+        <span id="hibernationTimeLeft">30s</span>
+      </div>
+      <p class="hibernation-info">Choose what your offspring will become:</p>
+      <div class="hibernation-options">
+        <div class="hibernation-option selected" id="hibernationTadpole" data-type="tadpole">
+          <div class="hibernation-icon">🐸</div>
+          <div class="hibernation-content">
+            <div class="hibernation-name">Tadpole</div>
+            <div class="hibernation-desc">Birth a new tadpole</div>
+          </div>
+        </div>
+        <div class="hibernation-option" id="hibernationBacteria" data-type="bacteria">
+          <div class="hibernation-icon">🦠</div>
+          <div class="hibernation-content">
+            <div class="hibernation-name">Prokaryosis</div>
+            <div class="hibernation-desc">Transform into a bacteria</div>
+            <div class="hibernation-warning">Requires: Nucleus unlock</div>
+          </div>
+        </div>
+      </div>
+      <button class="hibernation-cancel-btn" id="hibernationCancelBtn">Cancel Hibernation</button>
     </div>
   </div>
 

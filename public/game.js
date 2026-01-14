@@ -48,6 +48,16 @@ const registerForm = document.getElementById('registerForm');
 const loginError = document.getElementById('loginError');
 const registerError = document.getElementById('registerError');
 
+// ===== Hibernation Menu =====
+const hibernationMenu = document.getElementById('hibernationMenu');
+const hibernationTimerFill = document.getElementById('hibernationTimerFill');
+const hibernationTimeLeft = document.getElementById('hibernationTimeLeft');
+const hibernationTadpole = document.getElementById('hibernationTadpole');
+const hibernationBacteria = document.getElementById('hibernationBacteria');
+const hibernationCancelBtn = document.getElementById('hibernationCancelBtn');
+let selectedOffspringType = 'tadpole'; // Default to tadpole
+let hibernationMenuInterval = null;
+
 let currentUser = null;
 let lastSaveTime = 0;
 const SAVE_INTERVAL = 30000; // Save every 30 seconds
@@ -352,6 +362,43 @@ function showSaveIndicator(message) {
   setTimeout(() => indicator.classList.remove('show'), 2000);
 }
 
+// Flash a button to indicate an action can't be performed
+function flashButton(button) {
+  if (!button) return;
+
+  // Store original styles
+  const originalBackground = button.style.background;
+  const originalBorderColor = button.style.borderColor;
+  const originalTransform = button.style.transform;
+
+  // Flash sequence
+  let flashCount = 0;
+  const maxFlashes = 3;
+  const flashInterval = setInterval(() => {
+    if (flashCount >= maxFlashes * 2) {
+      // Restore original styles
+      button.style.background = originalBackground;
+      button.style.borderColor = originalBorderColor;
+      button.style.transform = originalTransform;
+      clearInterval(flashInterval);
+      return;
+    }
+
+    if (flashCount % 2 === 0) {
+      // Flash on - bright highlight
+      button.style.background = 'rgba(255, 100, 100, 0.6)';
+      button.style.borderColor = 'rgba(255, 150, 150, 0.9)';
+      button.style.transform = 'scale(1.1)';
+    } else {
+      // Flash off - return to original
+      button.style.background = originalBackground;
+      button.style.borderColor = originalBorderColor;
+      button.style.transform = originalTransform;
+    }
+    flashCount++;
+  }, 100);
+}
+
 // Stats tracking
 let totalFoodCollected = 0;
 let totalKills = 0;
@@ -421,6 +468,97 @@ setInterval(() => {
 checkSession();
 
 // ===== End Authentication System =====
+
+// ===== Hibernation Menu System =====
+function showHibernationMenu(cell) {
+  if (!hibernationMenu) return;
+
+  // Reset selection to tadpole
+  selectedOffspringType = 'tadpole';
+  hibernationTadpole?.classList.add('selected');
+  hibernationBacteria?.classList.remove('selected');
+
+  // Check if Prokaryosis (bacteria) option is available
+  // Requires Nucleus unlock (healthLevel >= 3 for tadpoles, or being a cell)
+  const hasNucleus = (cell.healthLevel || 0) >= 3 || cell.type === 'cell';
+  if (hibernationBacteria) {
+    if (hasNucleus) {
+      hibernationBacteria.classList.remove('locked');
+    } else {
+      hibernationBacteria.classList.add('locked');
+    }
+  }
+
+  // Show the menu
+  hibernationMenu.classList.remove('hidden');
+
+  // Start timer update interval
+  if (hibernationMenuInterval) clearInterval(hibernationMenuInterval);
+  hibernationMenuInterval = setInterval(() => updateHibernationTimer(cell), 100);
+}
+
+function hideHibernationMenu() {
+  if (!hibernationMenu) return;
+  hibernationMenu.classList.add('hidden');
+
+  if (hibernationMenuInterval) {
+    clearInterval(hibernationMenuInterval);
+    hibernationMenuInterval = null;
+  }
+}
+
+function updateHibernationTimer(cell) {
+  if (!cell || !cell.isHibernating || !cell.hibernationStartTime) {
+    hideHibernationMenu();
+    return;
+  }
+
+  const HIBERNATION_DURATION = 30000; // 30 seconds
+  const elapsed = Date.now() - cell.hibernationStartTime;
+  const remaining = Math.max(0, HIBERNATION_DURATION - elapsed);
+  const progress = Math.min(elapsed / HIBERNATION_DURATION * 100, 100);
+
+  if (hibernationTimerFill) {
+    hibernationTimerFill.style.width = progress + '%';
+  }
+  if (hibernationTimeLeft) {
+    hibernationTimeLeft.textContent = Math.ceil(remaining / 1000) + 's';
+  }
+
+  // Hide menu when hibernation completes
+  if (remaining <= 0) {
+    hideHibernationMenu();
+  }
+}
+
+// Hibernation menu event listeners
+hibernationTadpole?.addEventListener('click', () => {
+  selectedOffspringType = 'tadpole';
+  hibernationTadpole.classList.add('selected');
+  hibernationBacteria?.classList.remove('selected');
+});
+
+hibernationBacteria?.addEventListener('click', () => {
+  // Check if locked
+  if (hibernationBacteria.classList.contains('locked')) return;
+
+  selectedOffspringType = 'bacteria';
+  hibernationBacteria.classList.add('selected');
+  hibernationTadpole?.classList.remove('selected');
+});
+
+hibernationCancelBtn?.addEventListener('click', () => {
+  // Cancel hibernation for the selected cell
+  const selectedId = Array.from(selectedTadpoles)[0];
+  const selectedTad = myTadpoles.find(t => t.id === selectedId);
+  if (selectedTad && selectedTad.isHibernating) {
+    selectedTad.isHibernating = false;
+    selectedTad.hibernationStartTime = null;
+  }
+  hideHibernationMenu();
+});
+
+// ===== End Hibernation Menu System =====
 
 // Tutorial system
 const tutorialTooltip = document.getElementById('tutorialTooltip');
@@ -681,9 +819,9 @@ const cellTechNodes = {
   cellTechProtector: { type: 'cellProtector', level: 4, cost: 25, requires: 'cellTechGolgi', branch: 'defense' },
   // Storage branch (branches from Defense)
   cellTechStorage: { type: 'cellCapacity', level: 1, cost: 6, requires: 'cellTechWall', branch: 'defense' },
+  cellTechHibernate: { type: 'cellHibernate', level: 2, cost: 10, requires: 'cellTechStorage', branch: 'defense' },
   cellTechLipid: { type: 'cellCapacity', level: 2, cost: 10, requires: 'cellTechStorage', branch: 'defense' },
   cellTechGlycogen: { type: 'cellCapacity', level: 3, cost: 15, requires: 'cellTechLipid', branch: 'defense' },
-  cellTechHibernate: { type: 'cellHibernate', level: 4, cost: 20, requires: 'cellTechGlycogen', branch: 'defense' },
   // Speed branch (root) - Level 2 gives tail
   cellTechCilia: { type: 'cellSpeed', level: 1, cost: 6, requires: null, branch: 'speed' },
   cellTechMotor: { type: 'cellSpeed', level: 2, cost: 12, requires: 'cellTechCilia', branch: 'speed' },
@@ -716,9 +854,13 @@ creatureList.addEventListener('click', (e) => {
     const creatureIndex = parseInt(creatureItem.getAttribute('data-creature-index'));
     const creatureId = creatureItem.getAttribute('data-creature-id');
 
-    // Find the actual creature object
-    const tad = myTadpoles[creatureIndex];
+    // Find the actual creature object - prefer ID over index for robustness
+    let tad = myTadpoles.find(t => t.id === creatureId);
+    if (!tad && creatureIndex >= 0 && creatureIndex < myTadpoles.length) {
+      tad = myTadpoles[creatureIndex]; // Fallback to index
+    }
     if (!tad) {
+      console.warn('Could not find creature with id:', creatureId, 'or index:', creatureIndex);
       return;
     }
 
@@ -843,7 +985,12 @@ creatureList.addEventListener('dblclick', (e) => {
 
   if (creatureItem && creatureItem.classList.contains('creature-item')) {
     const creatureIndex = parseInt(creatureItem.getAttribute('data-creature-index'));
-    const tad = myTadpoles[creatureIndex];
+    const creatureId = creatureItem.getAttribute('data-creature-id');
+    // Prefer ID over index for robustness
+    let tad = myTadpoles.find(t => t.id === creatureId);
+    if (!tad && creatureIndex >= 0 && creatureIndex < myTadpoles.length) {
+      tad = myTadpoles[creatureIndex];
+    }
     if (tad) {
       // Center camera on this creature
       camera.x = tad.x;
@@ -886,6 +1033,7 @@ let lastCreatureCount = 0; // Track when to rebuild creature list
 let lastWaitingForSupport = false; // Track when support mode changes
 let lastWaitingForFood = false; // Track when food transfer mode changes
 let lastSelectedIds = new Set(); // Track selected IDs to detect selection changes
+let lastFoodValues = new Map(); // Track food values to detect changes
 
 // Cheat modes
 let invincibilityMode = false; // /op command - allow negative health without dying
@@ -2699,9 +2847,24 @@ canvas.addEventListener('click', (e) => {
   }
 
   if (clickedFood) {
-    // Move to food to eat it
-    moveTarget = { x: clickedFood.x, y: clickedFood.y, isFoodTarget: true, foodId: clickedFood.id };
-    attackTarget = null;
+    // Move to food to eat it - check if any creature can move
+    const selectedCreatures = myTadpoles.filter(t => selectedTadpoles.has(t.id));
+    const creaturesCanMove = selectedCreatures.filter(t => {
+      if (t.supportMode) return false;
+      if (t.type === 'cell' && t.hasProtector && t.bubbleShieldActive) return false;
+      return true;
+    });
+
+    if (creaturesCanMove.length > 0) {
+      moveTarget = { x: clickedFood.x, y: clickedFood.y, isFoodTarget: true, foodId: clickedFood.id };
+      attackTarget = null;
+    } else {
+      // Flash buttons to indicate can't move
+      const hasSupporting = selectedCreatures.some(t => t.supportMode);
+      const hasShielded = selectedCreatures.some(t => t.type === 'cell' && t.hasProtector && t.bubbleShieldActive);
+      if (hasSupporting) flashButton(supportBtn);
+      if (hasShielded) flashButton(shieldBtn);
+    }
   } else if (clickedEntity && myTadpoles.includes(clickedEntity)) {
     // Selecting own tadpole
     if (e.shiftKey) {
@@ -2724,9 +2887,34 @@ canvas.addEventListener('click', (e) => {
     attackTarget = clickedEntity;
     moveTarget = null;
   } else {
-    // Move to location
-    moveTarget = { x: worldX, y: worldY };
-    attackTarget = null;
+    // Move to location - check if any selected creature can actually move
+    const selectedCreatures = myTadpoles.filter(t => selectedTadpoles.has(t.id));
+
+    // Check if any creature can move (not supporting and not shielded)
+    const creaturesCanMove = selectedCreatures.filter(t => {
+      // Supporting creatures can't move independently
+      if (t.supportMode) return false;
+      // Protector cells with active shield can't move
+      if (t.type === 'cell' && t.hasProtector && t.bubbleShieldActive) return false;
+      return true;
+    });
+
+    if (creaturesCanMove.length > 0) {
+      // At least one creature can move
+      moveTarget = { x: worldX, y: worldY };
+      attackTarget = null;
+    } else {
+      // No creature can move - flash the appropriate button
+      const hasSupporting = selectedCreatures.some(t => t.supportMode);
+      const hasShielded = selectedCreatures.some(t => t.type === 'cell' && t.hasProtector && t.bubbleShieldActive);
+
+      if (hasSupporting) {
+        flashButton(supportBtn);
+      }
+      if (hasShielded) {
+        flashButton(shieldBtn);
+      }
+    }
   }
 });
 
@@ -3014,10 +3202,20 @@ hibernateBtn.addEventListener('click', () => {
         // Cancel hibernation
         selectedTad.isHibernating = false;
         selectedTad.hibernationStartTime = null;
+        hideHibernationMenu();
       } else {
+        // Require 1 nucleotide to start hibernation
+        if ((selectedTad.nucleotides || 0) < 1) {
+          console.log('Not enough nucleotides for hibernation');
+          flashButton(hibernateBtn);
+          return;
+        }
+        selectedTad.nucleotides = (selectedTad.nucleotides || 0) - 1;
         // Start hibernation
         selectedTad.isHibernating = true;
         selectedTad.hibernationStartTime = Date.now();
+        // Show hibernation menu for offspring type selection
+        showHibernationMenu(selectedTad);
         console.log('Cell entering hibernation...');
       }
       updateSelectionCount();
@@ -3269,17 +3467,32 @@ function handleEvolutionAction(actionId) {
     if (selectedTad.isHibernating) {
       selectedTad.isHibernating = false;
       selectedTad.hibernationStartTime = null;
+      hideHibernationMenu();
     } else {
+      // Require 1 nucleotide to start hibernation
+      if ((selectedTad.nucleotides || 0) < 1) {
+        console.log('Not enough nucleotides for hibernation');
+        return;
+      }
+      selectedTad.nucleotides = (selectedTad.nucleotides || 0) - 1;
       selectedTad.isHibernating = true;
       selectedTad.hibernationStartTime = Date.now();
+      // Show hibernation menu for offspring type selection
+      showHibernationMenu(selectedTad);
     }
     upgradeMenu.classList.add('hidden');
   } else if (actionId === 'techSplit') {
     const splitCost = 15;
     if ((selectedTad.food || 0) < splitCost) return;
+    // Require 1 nucleotide for split
+    if ((selectedTad.nucleotides || 0) < 1) {
+      console.log('Not enough nucleotides for split');
+      return;
+    }
 
-    // Deduct cost
+    // Deduct costs
     selectedTad.food -= splitCost;
+    selectedTad.nucleotides = (selectedTad.nucleotides || 0) - 1;
 
     // Create split animation
     selectedTad.isSplitting = true;
@@ -3302,12 +3515,15 @@ function handleEvolutionAction(actionId) {
         vy: 0,
         radius: selectedTad.radius || 40,
         color: selectedTad.color,
-        name: selectedTad.name + "'",
+        name: selectedTad.name,
         type: 'cell',
         health: CELL_MAX_HEALTH, // Full health for new cell
+        maxHealth: CELL_MAX_HEALTH,
         food: 0,
         angle: spawnAngle,
         wiggleOffset: Math.random() * Math.PI * 2,
+        lastHit: 0,
+        lastAttack: 0, // Required for attack cooldown to work
         // No upgrades - virgin cell
         cellHealthLevel: 0,
         cellStrengthLevel: 0,
@@ -3320,6 +3536,7 @@ function handleEvolutionAction(actionId) {
         hasCellTail: false,
         hasProtector: false,
         hasSword: false,
+        canHibernate: false,
         // Birth animation
         birthTime: Date.now(),
         birthDuration: 800
@@ -3506,9 +3723,15 @@ transformCellBtn?.addEventListener('click', () => {
     if (selectedTad && selectedTad.type === 'tadpole' && (selectedTad.food || 0) >= 20) {
       // Check if already transforming
       if (selectedTad.isTransforming) return;
+      // Require 1 nucleotide for mitosis
+      if ((selectedTad.nucleotides || 0) < 1) {
+        console.log('Not enough nucleotides for mitosis');
+        return;
+      }
 
-      // Deduct cost from selected tadpole
+      // Deduct costs
       selectedTad.food = (selectedTad.food || 0) - 20;
+      selectedTad.nucleotides = (selectedTad.nucleotides || 0) - 1;
 
       // Start transformation process
       selectedTad.isTransforming = true;
@@ -3722,9 +3945,10 @@ function updateUpgradeMenu() {
     if (techHibernate) techHibernate.classList.add('hidden');
     if (techSplit) techSplit.classList.add('hidden');
   } else {
-    // Show Mitosis and Bacteria for tadpoles, hide Hibernate and Split
+    // Show Mitosis for tadpoles, hide Hibernate, Split, and Bacteria
+    // Bacteria (Prokaryosis) is only available during cell hibernation
     if (techMitosis) techMitosis.classList.remove('hidden');
-    if (techBacteria) techBacteria.classList.remove('hidden');
+    if (techBacteria) techBacteria.classList.add('hidden'); // Prokaryosis only via hibernation
     if (techHibernate) techHibernate.classList.add('hidden');
     if (techSplit) techSplit.classList.add('hidden');
   }
@@ -3971,7 +4195,17 @@ function updateSelectionCount() {
   const supportModeChanged = waitingForSupportTarget !== lastWaitingForSupport;
   const foodModeChanged = waitingForFoodTarget !== lastWaitingForFood;
 
-  if (creatureCountChanged || supportModeChanged || foodModeChanged || selectionChanged) {
+  // Check if any food values changed
+  let foodChanged = false;
+  for (let tad of myTadpoles) {
+    const lastFood = lastFoodValues.get(tad.id) || 0;
+    if ((tad.food || 0) !== lastFood) {
+      foodChanged = true;
+      lastFoodValues.set(tad.id, tad.food || 0);
+    }
+  }
+
+  if (creatureCountChanged || supportModeChanged || foodModeChanged || selectionChanged || foodChanged) {
     lastCreatureCount = myTadpoles.length;
     lastWaitingForSupport = waitingForSupportTarget;
     lastWaitingForFood = waitingForFoodTarget;
@@ -4150,8 +4384,9 @@ function update(deltaTime = 1) {
         const maxDistance = 200; // Maximum separation before catching up
 
         // Find what the leader is attacking
-        // Check if leader is near any enemy (NPCs or other players)
+        // Check if leader is near any enemy (NPCs or other players) - only alive targets
         for (let npc of Object.values(npcs)) {
+          if (npc.health <= 0) continue; // Skip dead NPCs
           const distX = leader.x - npc.x;
           const distY = leader.y - npc.y;
           const distance = Math.sqrt(distX * distX + distY * distY);
@@ -4164,6 +4399,7 @@ function update(deltaTime = 1) {
         // Also check other players
         if (!supportAttackTarget) {
           for (let player of Object.values(players)) {
+            if (player.health <= 0) continue; // Skip dead players
             const distX = leader.x - player.x;
             const distY = leader.y - player.y;
             const distance = Math.sqrt(distX * distX + distY * distY);
@@ -4350,6 +4586,24 @@ function update(deltaTime = 1) {
       }
 
       // Attack target - all selected tadpoles attack continuously
+      // First check if target is still valid (alive and exists)
+      if (currentAttackTarget) {
+        // Check if target is dead or no longer exists
+        const targetIsDead = currentAttackTarget.health <= 0;
+        const targetIsNPC = npcs[currentAttackTarget.id] !== undefined;
+        const targetIsPlayer = players[currentAttackTarget.id] !== undefined;
+        const targetExists = targetIsNPC || targetIsPlayer || myTadpoles.includes(currentAttackTarget);
+
+        if (targetIsDead || !targetExists) {
+          // Clear the attack target
+          if (!tad.supportMode) {
+            attackTarget = null;
+          }
+          // Skip attack logic for this frame
+          currentAttackTarget = null;
+        }
+      }
+
       if (currentAttackTarget) {
         // Apply formation offset to attack position (where creature moves to)
         const targetX = currentAttackTarget.x + formationOffset.x;
@@ -4925,32 +5179,67 @@ function update(deltaTime = 1) {
         // Pop out direction - random angle
         const popAngle = Math.random() * Math.PI * 2;
         const popSpeed = 3; // Gentle initial velocity
-        const spawnDistance = tad.radius + TADPOLE_RADIUS; // Spawn right at the edge, touching the cell
 
-        // Spawn a new tadpole right next to the cell
-        const newTad = {
-          id: `${myId}_${Date.now()}`,
-          x: tad.x + Math.cos(popAngle) * spawnDistance,
-          y: tad.y + Math.sin(popAngle) * spawnDistance,
-          vx: Math.cos(popAngle) * popSpeed,
-          vy: Math.sin(popAngle) * popSpeed,
-          renderX: tad.x + Math.cos(popAngle) * spawnDistance,
-          renderY: tad.y + Math.sin(popAngle) * spawnDistance,
-          color: '#FFFFFF',
-          radius: TADPOLE_RADIUS,
-          score: 0,
-          name: tad.name,
-          health: MAX_HEALTH,
-          lastHit: 0,
-          lastAttack: 0,
-          type: 'tadpole',
-          food: 0,
-          birthTime: Date.now(), // For birth animation
-          birthDuration: 800 // Faster, more dramatic birth animation
-        };
-        initializeTadpole(newTad);
+        // Determine offspring type based on hibernation menu selection
+        const offspringType = selectedOffspringType || 'tadpole';
+        let newCreature;
 
-        myTadpoles.push(newTad);
+        if (offspringType === 'bacteria') {
+          // Spawn a bacteria (Prokaryosis)
+          const spawnDistance = tad.radius + BACTERIA_RADIUS;
+          newCreature = {
+            id: `bacteria_${myId}_${Date.now()}`,
+            x: tad.x + Math.cos(popAngle) * spawnDistance,
+            y: tad.y + Math.sin(popAngle) * spawnDistance,
+            vx: Math.cos(popAngle) * popSpeed,
+            vy: Math.sin(popAngle) * popSpeed,
+            renderX: tad.x + Math.cos(popAngle) * spawnDistance,
+            renderY: tad.y + Math.sin(popAngle) * spawnDistance,
+            color: '#7fbf7f',
+            radius: BACTERIA_RADIUS,
+            name: tad.name,
+            health: BACTERIA_MAX_HEALTH,
+            maxHealth: BACTERIA_MAX_HEALTH,
+            lastHit: 0,
+            lastAttack: 0,
+            type: 'bacteria',
+            food: 0,
+            birthTime: Date.now(),
+            birthDuration: 800,
+            blobShape: generateBlobShape(),
+            angle: popAngle,
+            wiggleOffset: Math.random() * Math.PI * 2,
+            isFarming: false
+          };
+          console.log('Hibernation complete! New bacteria spawned (Prokaryosis).');
+        } else {
+          // Spawn a tadpole (default)
+          const spawnDistance = tad.radius + TADPOLE_RADIUS;
+          newCreature = {
+            id: `${myId}_${Date.now()}`,
+            x: tad.x + Math.cos(popAngle) * spawnDistance,
+            y: tad.y + Math.sin(popAngle) * spawnDistance,
+            vx: Math.cos(popAngle) * popSpeed,
+            vy: Math.sin(popAngle) * popSpeed,
+            renderX: tad.x + Math.cos(popAngle) * spawnDistance,
+            renderY: tad.y + Math.sin(popAngle) * spawnDistance,
+            color: '#FFFFFF',
+            radius: TADPOLE_RADIUS,
+            score: 0,
+            name: tad.name,
+            health: MAX_HEALTH,
+            lastHit: 0,
+            lastAttack: 0,
+            type: 'tadpole',
+            food: 0,
+            birthTime: Date.now(),
+            birthDuration: 800
+          };
+          initializeTadpole(newCreature);
+          console.log('Hibernation complete! New tadpole spawned.');
+        }
+
+        myTadpoles.push(newCreature);
 
         // Cell recoil in opposite direction
         tad.vx = -Math.cos(popAngle) * 3;
@@ -4963,10 +5252,14 @@ function update(deltaTime = 1) {
         tad.isHibernating = false;
         tad.hibernationStartTime = null;
 
+        // Hide hibernation menu if open
+        hideHibernationMenu();
+
+        // Reset offspring type selection to default
+        selectedOffspringType = 'tadpole';
+
         // Update UI to reset hibernate button
         updateSelectionCount();
-
-        console.log('Hibernation complete! New tadpole spawned.');
       }
     }
 

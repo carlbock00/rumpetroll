@@ -259,6 +259,7 @@ function updateNPC(npc) {
   for (let playerId in players) {
     const player = players[playerId];
     if (!player) continue;
+
     // Skip inactive players
     if (player.isInactive) {
       // console.log(`NPC ${npc.id} skipping inactive player ${player.name}`);
@@ -270,14 +271,44 @@ function updateNPC(npc) {
       continue;
     }
 
-    const dx = npc.x - player.x;
-    const dy = npc.y - player.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
+    // Find the closest vulnerable creature (tadpole/bacteria) to this NPC
+    let closestVulnerableDist = Infinity;
+    let closestVulnerableCreature = null;
+    let hasVulnerableCreature = false;
 
-    // Cells only attack smaller creatures (tadpoles), not other cells
+    // Check primary creature
     const playerType = player.type || 'tadpole';
-    const cellCanChase = npc.type === 'cell' && !npc.isTired && playerType !== 'cell';
-    const cellCanAttack = npc.type === 'cell' && playerType !== 'cell'; // Cells can attack even when tired
+    if (playerType !== 'cell') {
+      const dx = npc.x - player.x;
+      const dy = npc.y - player.y;
+      closestVulnerableDist = Math.sqrt(dx * dx + dy * dy);
+      closestVulnerableCreature = { x: player.x, y: player.y, type: playerType };
+      hasVulnerableCreature = true;
+    }
+
+    // Check all secondary creatures for closer vulnerable targets
+    if (player.creatures && player.creatures.length > 0) {
+      for (const creature of player.creatures) {
+        if (creature.type !== 'cell' && creature.x !== undefined && creature.y !== undefined) {
+          const dx = npc.x - creature.x;
+          const dy = npc.y - creature.y;
+          const creatureDist = Math.sqrt(dx * dx + dy * dy);
+          if (creatureDist < closestVulnerableDist) {
+            closestVulnerableDist = creatureDist;
+            closestVulnerableCreature = creature;
+          }
+          hasVulnerableCreature = true;
+        }
+      }
+    }
+
+    // Use the closest vulnerable creature for distance checks
+    const dist = closestVulnerableCreature ? closestVulnerableDist : Math.sqrt((npc.x - player.x) ** 2 + (npc.y - player.y) ** 2);
+    const dx = closestVulnerableCreature ? npc.x - closestVulnerableCreature.x : npc.x - player.x;
+    const dy = closestVulnerableCreature ? npc.y - closestVulnerableCreature.y : npc.y - player.y;
+
+    const cellCanChase = npc.type === 'cell' && !npc.isTired && hasVulnerableCreature;
+    const cellCanAttack = npc.type === 'cell' && hasVulnerableCreature; // Cells can attack even when tired
     const isAggressive = npc.provoked || cellCanChase;
     const canAttackWhileTired = npc.provoked || cellCanAttack; // Allow attacking even when tired
     const spotRange = npc.type === 'cell' ? 400 : 300;
@@ -315,26 +346,52 @@ function updateNPC(npc) {
 
     // Attack when in range - cells can attack even while tired if target walks into range
     // Idle players CAN still attack when provoked and player is in range
-    // NPC cells NEVER attack player cells - only tadpoles
-    const canAttackTarget = !(npc.type === 'cell' && playerType === 'cell');
+    // NPC cells NEVER attack player cells - only tadpoles (but will attack if player has any tadpoles)
+    const canAttackTarget = !(npc.type === 'cell' && !hasVulnerableCreature);
 
-    // Debug: log when NPC is close enough but not attacking
-    if (dist < ATTACK_RANGE && !isIdlePlayer) {
-      const cooldownOk = now - npc.lastAttack > NPC_ATTACK_COOLDOWN;
-      if (!canAttackWhileTired || !canAttackTarget || !cooldownOk || player.bubbleShieldActive) {
-        console.log(`NPC ${npc.id} near ${player.name} (dist=${dist.toFixed(0)}) but not attacking: canAttackWhileTired=${canAttackWhileTired}, canAttackTarget=${canAttackTarget}, cooldownOk=${cooldownOk} (lastAttack=${npc.lastAttack}, now=${now}, diff=${now-npc.lastAttack}, cooldown=${NPC_ATTACK_COOLDOWN}), bubbleShield=${player.bubbleShieldActive}`);
+    // Check if the closest vulnerable creature is protected by any protector's bubble shield
+    // Use the vulnerable creature's position, not the player's primary position
+    const targetX = closestVulnerableCreature ? closestVulnerableCreature.x : player.x;
+    const targetY = closestVulnerableCreature ? closestVulnerableCreature.y : player.y;
+    let isProtectedByShield = false;
+
+    // Check all players for active protector shields that cover the target creature
+    // Must check distance to shield center - having shield active doesn't mean target is protected
+    for (let protectorId in players) {
+      const protector = players[protectorId];
+      if (!protector) continue;
+      if (protector.hasProtector && protector.bubbleShieldActive) {
+        // Find the protector cell's position (could be primary or secondary creature)
+        let shieldX = protector.x;
+        let shieldY = protector.y;
+
+        // If protector's primary isn't a cell, check secondary creatures for the protector cell
+        if (protector.type !== 'cell' && protector.creatures) {
+          const protectorCell = protector.creatures.find(c => c.type === 'cell' && c.hasProtector);
+          if (protectorCell && protectorCell.x !== undefined) {
+            shieldX = protectorCell.x;
+            shieldY = protectorCell.y;
+          }
+        }
+
+        const shieldRadius = (protector.radius || 40) * 12;
+        const shieldDx = targetX - shieldX;
+        const shieldDy = targetY - shieldY;
+        const shieldDist = Math.sqrt(shieldDx * shieldDx + shieldDy * shieldDy);
+        if (shieldDist < shieldRadius) {
+          isProtectedByShield = true;
+          break;
+        }
       }
     }
 
-    if (canAttackWhileTired && canAttackTarget && dist < ATTACK_RANGE && now - npc.lastAttack > NPC_ATTACK_COOLDOWN && !player.bubbleShieldActive) {
+    if (canAttackWhileTired && canAttackTarget && dist < ATTACK_RANGE && now - npc.lastAttack > NPC_ATTACK_COOLDOWN && !isProtectedByShield) {
       const baseDamage = npc.type === 'cell' ? NPC_CELL_DAMAGE : NPC_TADPOLE_DAMAGE;
       const actualDamage = baseDamage * (playerType === 'cell' ? CELL_DAMAGE_RESISTANCE : 1);
 
       npc.lastAttack = now;
       npc.attackLungeTime = now;
       npc.attackLungeAngle = Math.atan2(-dy, -dx);
-
-      console.log(`NPC ${npc.id} ATTACKING ${player.name} for ${actualDamage} damage`);
 
       // Send damage event to ALL sockets for this player (handles secondary windows)
       const username = player.name;
@@ -363,6 +420,34 @@ function updateNPC(npc) {
       const avoidAngle = Math.atan2(dy, dx);
       npc.vx += Math.cos(avoidAngle) * 0.015;
       npc.vy += Math.sin(avoidAngle) * 0.015;
+    }
+
+    // Even non-aggressive NPCs should attack if player walks into attack range
+    // This handles tired cells that aren't chasing but player comes to them
+    if (!isAggressive && canAttackWhileTired && canAttackTarget && dist < ATTACK_RANGE && now - npc.lastAttack > NPC_ATTACK_COOLDOWN && !isProtectedByShield) {
+      const baseDamage = npc.type === 'cell' ? NPC_CELL_DAMAGE : NPC_TADPOLE_DAMAGE;
+      const actualDamage = baseDamage * (playerType === 'cell' ? CELL_DAMAGE_RESISTANCE : 1);
+
+      npc.lastAttack = now;
+      npc.attackLungeTime = now;
+      npc.attackLungeAngle = Math.atan2(-dy, -dx);
+
+      console.log(`Non-aggressive NPC ${npc.id} ATTACKING ${player.name} (walked into range) for ${actualDamage} damage`);
+
+      // Send damage event to ALL sockets for this player
+      const username = player.name;
+      const playerSocketIds = userSockets[username] || [playerId];
+      for (const sockId of playerSocketIds) {
+        const sock = io.sockets.sockets.get(sockId);
+        if (sock) {
+          sock.emit('npcAttack', {
+            npcId: npc.id,
+            damage: actualDamage,
+            knockbackX: -Math.cos(npc.attackLungeAngle) * 0.5,
+            knockbackY: -Math.sin(npc.attackLungeAngle) * 0.5
+          });
+        }
+      }
     }
   }
 
