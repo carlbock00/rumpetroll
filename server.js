@@ -1185,6 +1185,43 @@ setInterval(savePlayers, 30000);
 setInterval(saveUserPositions, 5000); // Save positions more frequently
 setInterval(saveIdleNpcs, 5000); // Save idle NPCs frequently
 
+// Shield cost processing - 1 food per hour
+const SHIELD_COST_INTERVAL = 60 * 60 * 1000; // 1 hour in milliseconds
+setInterval(() => {
+  const now = Date.now();
+
+  for (let playerId in players) {
+    const player = players[playerId];
+    if (player.bubbleShieldActive && player.shieldLastCharge) {
+      // Check if an hour has passed since last charge
+      if (now - player.shieldLastCharge >= SHIELD_COST_INTERVAL) {
+        // Check if player has food
+        if ((player.food || 0) >= 1) {
+          // Deduct food
+          player.food = (player.food || 0) - 1;
+          player.shieldLastCharge = now;
+          // Notify client
+          const sock = io.sockets.sockets.get(playerId);
+          if (sock) {
+            sock.emit('foodUpdate', { food: player.food });
+            sock.emit('shieldCharged', { cost: 1, remaining: player.food });
+          }
+        } else {
+          // No food - deactivate shield
+          player.bubbleShieldActive = false;
+          player.shieldLastCharge = null;
+          // Notify client
+          const sock = io.sockets.sockets.get(playerId);
+          if (sock) {
+            sock.emit('shieldDeactivated', { reason: 'Out of food' });
+          }
+          console.log(`Shield deactivated for ${player.name} - out of food`);
+        }
+      }
+    }
+  }
+}, 60000); // Check every minute
+
 // Helper: Find safe spawn position away from cells
 function findSafeSpawnPosition() {
   let spawnX, spawnY;
@@ -2095,6 +2132,21 @@ io.on('connection', (socket) => {
   socket.on('bubbleShield', (data) => {
     const player = players[socket.id];
     if (player) {
+      // When activating shield, check if player has food and charge immediately
+      if (data.active && !player.bubbleShieldActive) {
+        // Need at least 1 food to activate shield
+        if ((player.food || 0) < 1) {
+          // Not enough food - deny activation
+          socket.emit('shieldDenied', { reason: 'Not enough food' });
+          return;
+        }
+        // Deduct 1 food immediately (first hour)
+        player.food = (player.food || 0) - 1;
+        player.shieldLastCharge = Date.now();
+        // Notify client of food change
+        socket.emit('foodUpdate', { food: player.food });
+      }
+
       player.bubbleShieldActive = data.active;
       // Also track per-creature shield state for disconnect handling
       if (!player.creatureShields) {

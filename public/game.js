@@ -1814,6 +1814,41 @@ socket.on('foodReset', (serverFood) => {
   console.log('Food reset - now extremely sparse');
 });
 
+// Shield cost events
+socket.on('foodUpdate', (data) => {
+  // Server updated food (e.g., shield cost)
+  // Find the protector cell and update its food
+  const protector = myTadpoles.find(t => t.type === 'cell' && t.hasProtector);
+  if (protector) {
+    protector.food = data.food;
+    currentFood = data.food;
+  }
+});
+
+socket.on('shieldDenied', (data) => {
+  // Shield activation denied - not enough food
+  console.log('Shield denied:', data.reason);
+  // Revert shield state on client
+  const protector = myTadpoles.find(t => t.type === 'cell' && t.hasProtector);
+  if (protector) {
+    protector.bubbleShieldActive = false;
+  }
+});
+
+socket.on('shieldDeactivated', (data) => {
+  // Shield was forcibly deactivated (ran out of food)
+  console.log('Shield deactivated:', data.reason);
+  const protector = myTadpoles.find(t => t.type === 'cell' && t.hasProtector);
+  if (protector) {
+    protector.bubbleShieldActive = false;
+  }
+});
+
+socket.on('shieldCharged', (data) => {
+  // Shield hourly cost charged
+  console.log(`Shield charged: ${data.cost} food, ${data.remaining} remaining`);
+});
+
 // NPC handlers - NPCs are now server-authoritative
 socket.on('npcs', (serverNpcs) => {
   // Initial NPC state from server
@@ -3229,6 +3264,13 @@ shieldBtn.addEventListener('click', () => {
     const selectedTad = myTadpoles.find(t => t.id === selectedId);
 
     if (selectedTad && selectedTad.type === 'cell' && selectedTad.hasProtector && !selectedTad.isHibernating) {
+      // When activating shield, check if we have enough food (costs 1 food per hour)
+      if (!selectedTad.bubbleShieldActive && (selectedTad.food || 0) < 1) {
+        console.log('Not enough food to activate shield (costs 1 food/hour)');
+        flashButton(shieldBtn);
+        return;
+      }
+
       selectedTad.bubbleShieldActive = !selectedTad.bubbleShieldActive;
       // Notify server of shield state for protection from NPCs
       socket.emit('bubbleShield', { oderId: selectedTad.id, active: selectedTad.bubbleShieldActive });
