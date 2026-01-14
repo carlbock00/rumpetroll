@@ -1960,9 +1960,70 @@ io.on('connection', (socket) => {
   });
 });
 
+// Convert all active players to idle NPCs (for graceful shutdown)
+function convertAllPlayersToIdleNpcs() {
+  const playerIds = Object.keys(players);
+  console.log(`Converting ${playerIds.length} active players to idle NPCs for shutdown...`);
+
+  for (const playerId of playerIds) {
+    const player = players[playerId];
+    if (!player || !player.name || player.name.startsWith('Player')) continue;
+
+    // Create idle NPC from player
+    const npc = {
+      id: playerId,
+      x: player.x,
+      y: player.y,
+      vx: 0,
+      vy: 0,
+      color: player.color || '#a0a0a0',
+      radius: player.radius || 8,
+      name: player.name,
+      ownerName: player.name,
+      health: player.health || 70,
+      maxHealth: player.maxHealth || 70,
+      lastHit: 0,
+      lastAttack: 0,
+      type: player.type || 'tadpole',
+      moveTarget: null,
+      targetChangeTime: Date.now(),
+      provoked: false,
+      provokedBy: null,
+      attackTarget: null,
+      food: player.food || 0,
+      angle: player.angle || 0,
+      wiggleOffset: player.wiggleOffset || Math.random() * Math.PI * 2,
+      chaseEnergy: 100,
+      maxChaseEnergy: 100,
+      isTired: false,
+      tiredStartTime: 0,
+      isSprinting: false,
+      isIdlePlayer: true,
+      hasProtector: player.hasProtector || false,
+      bubbleShieldActive: player.bubbleShieldActive || false,
+      lastMoveTime: Date.now()
+    };
+
+    npcs[playerId] = npc;
+
+    // Save position
+    if (player.name) {
+      userPositions[player.name] = {
+        x: player.x,
+        y: player.y,
+        type: player.type || 'tadpole',
+        radius: player.radius || 8
+      };
+    }
+
+    console.log(`  Converted player ${player.name} to idle NPC`);
+  }
+}
+
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received, saving data and shutting down...');
+  convertAllPlayersToIdleNpcs();
   await Promise.all([savePlayers(), saveUserPositions(), saveIdleNpcs()]);
   server.close(() => {
     console.log('Server closed');
@@ -1972,6 +2033,7 @@ process.on('SIGTERM', async () => {
 
 process.on('SIGINT', async () => {
   console.log('SIGINT received, saving data and shutting down...');
+  convertAllPlayersToIdleNpcs();
   await Promise.all([savePlayers(), saveUserPositions(), saveIdleNpcs()]);
   server.close(() => {
     console.log('Server closed');
