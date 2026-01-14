@@ -31,7 +31,9 @@ const USER_POSITIONS_FILE = hasPersistentDisk
   ? path.join(PERSISTENT_DATA_DIR, 'user_positions.json')
   : path.join(__dirname, 'user_positions.json');
 
-console.log(`Using ${hasPersistentDisk ? 'persistent disk' : 'local'} storage for runtime data`);
+console.log(`Using ${hasPersistentDisk ? 'PERSISTENT DISK' : 'LOCAL (ephemeral)'} storage for runtime data`);
+console.log(`  Idle NPCs file: ${IDLE_NPCS_FILE}`);
+console.log(`  User positions file: ${USER_POSITIONS_FILE}`);
 
 // Use a persistent session secret (generate once, store in file)
 const SESSION_SECRET_FILE = hasPersistentDisk
@@ -1029,7 +1031,12 @@ async function saveIdleNpcs() {
         idleNpcs[npcId] = npc;
       }
     }
-    await fs.writeFile(IDLE_NPCS_FILE, JSON.stringify(idleNpcs, null, 2));
+    const count = Object.keys(idleNpcs).length;
+    if (count > 0) {
+      console.log(`Saving ${count} idle NPCs to ${IDLE_NPCS_FILE}...`);
+      await fs.writeFile(IDLE_NPCS_FILE, JSON.stringify(idleNpcs, null, 2));
+      console.log(`Successfully saved ${count} idle NPCs`);
+    }
   } catch (error) {
     console.error('Error saving idle NPCs:', error);
   }
@@ -1037,10 +1044,12 @@ async function saveIdleNpcs() {
 
 // Load idle NPCs from file
 async function loadIdleNpcs() {
+  console.log(`Attempting to load idle NPCs from ${IDLE_NPCS_FILE}...`);
   try {
     const data = await fs.readFile(IDLE_NPCS_FILE, 'utf8');
     const savedIdleNpcs = JSON.parse(data);
     let loadedCount = 0;
+    const loadedNames = [];
     for (let npcId in savedIdleNpcs) {
       const savedNpc = savedIdleNpcs[npcId];
       // Restore idle NPC with all its properties
@@ -1051,13 +1060,17 @@ async function loadIdleNpcs() {
         lastHit: 0
       };
       loadedCount++;
+      if (savedNpc.name) loadedNames.push(savedNpc.name);
     }
     if (loadedCount > 0) {
-      console.log(`Loaded ${loadedCount} idle player NPCs from file`);
+      console.log(`Loaded ${loadedCount} idle player NPCs from file: ${loadedNames.join(', ')}`);
+    } else {
+      console.log('No idle NPCs found in file');
     }
   } catch (error) {
-    // File doesn't exist or is invalid - that's okay
-    if (error.code !== 'ENOENT') {
+    if (error.code === 'ENOENT') {
+      console.log('No idle NPCs file found (first run or empty)');
+    } else {
       console.error('Error loading idle NPCs:', error);
     }
   }
@@ -2100,6 +2113,7 @@ function convertAllPlayersToIdleNpcs() {
       provokedBy: null,
       attackTarget: null,
       food: player.food || 0,
+      nucleotides: player.nucleotides || 0,
       angle: player.angle || 0,
       wiggleOffset: player.wiggleOffset || Math.random() * Math.PI * 2,
       chaseEnergy: 100,
@@ -2109,6 +2123,7 @@ function convertAllPlayersToIdleNpcs() {
       isSprinting: false,
       isIdlePlayer: true,
       hasProtector: player.hasProtector || false,
+      hasSword: player.hasSword || false,
       bubbleShieldActive: player.bubbleShieldActive || false,
       lastMoveTime: Date.now()
     };
@@ -2130,25 +2145,46 @@ function convertAllPlayersToIdleNpcs() {
 }
 
 // Graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('SIGTERM received, saving data and shutting down...');
-  convertAllPlayersToIdleNpcs();
-  await Promise.all([savePlayers(), saveUserPositions(), saveIdleNpcs()]);
-  server.close(() => {
-    console.log('Server closed');
-    process.exit(0);
-  });
-});
+let isShuttingDown = false;
 
-process.on('SIGINT', async () => {
-  console.log('SIGINT received, saving data and shutting down...');
+async function gracefulShutdown(signal) {
+  if (isShuttingDown) {
+    console.log('Already shutting down...');
+    return;
+  }
+  isShuttingDown = true;
+
+  console.log(`${signal} received, saving data and shutting down...`);
+  console.log(`Current state: ${Object.keys(players).length} players, ${Object.keys(npcs).filter(id => npcs[id].isIdlePlayer).length} idle NPCs`);
+
+  // Convert all active players to idle NPCs first
   convertAllPlayersToIdleNpcs();
-  await Promise.all([savePlayers(), saveUserPositions(), saveIdleNpcs()]);
+  console.log(`After conversion: ${Object.keys(npcs).filter(id => npcs[id].isIdlePlayer).length} idle NPCs`);
+
+  // Save all data
+  try {
+    console.log('Saving all data...');
+    await Promise.all([savePlayers(), saveUserPositions(), saveIdleNpcs()]);
+    console.log('All data saved successfully');
+  } catch (error) {
+    console.error('Error during save:', error);
+  }
+
+  // Close server
   server.close(() => {
     console.log('Server closed');
     process.exit(0);
   });
-});
+
+  // Force exit after 5 seconds if server doesn't close gracefully
+  setTimeout(() => {
+    console.log('Forcing exit after timeout');
+    process.exit(0);
+  }, 5000);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Periodically check and regenerate food to maintain density
 setInterval(() => {
@@ -2319,6 +2355,7 @@ function convertPlayerToNPC(playerId, player, reason) {
       provokedBy: null,
       attackTarget: null,
       food: player.food || 0,
+      nucleotides: player.nucleotides || 0,
       angle: player.angle || 0,
       wiggleOffset: player.wiggleOffset || Math.random() * Math.PI * 2,
       chaseEnergy: 100,
@@ -2328,6 +2365,7 @@ function convertPlayerToNPC(playerId, player, reason) {
       isSprinting: false,
       isIdlePlayer: true,
       hasProtector: player.hasProtector || false,
+      hasSword: player.hasSword || false,
       bubbleShieldActive: player.bubbleShieldActive || false
     };
 
