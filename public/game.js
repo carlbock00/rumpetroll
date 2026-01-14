@@ -5188,6 +5188,21 @@ function update(deltaTime = 1) {
           hasProtector: primaryTad.hasProtector,
           hasSword: primaryTad.hasSword,
           bubbleShieldActive: primaryTad.bubbleShieldActive,
+          // Tadpole upgrades
+          healthLevel: primaryTad.healthLevel || 0,
+          strengthLevel: primaryTad.strengthLevel || 0,
+          capacityLevel: primaryTad.capacityLevel || 0,
+          maxHealthBonus: primaryTad.maxHealthBonus || 0,
+          strengthBonus: primaryTad.strengthBonus || 0,
+          // Cell upgrades
+          cellHealthLevel: primaryTad.cellHealthLevel || 0,
+          cellStrengthLevel: primaryTad.cellStrengthLevel || 0,
+          cellCapacityLevel: primaryTad.cellCapacityLevel || 0,
+          cellSpeedLevel: primaryTad.cellSpeedLevel || 0,
+          cellSpeedBonus: primaryTad.cellSpeedBonus || 0,
+          cellStrengthBonus: primaryTad.cellStrengthBonus || 0,
+          hasCellTail: primaryTad.hasCellTail || false,
+          canHibernate: primaryTad.canHibernate || false,
           creatures: creatures
         });
       }

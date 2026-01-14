@@ -1400,6 +1400,23 @@ io.on('connection', (socket) => {
     if (data.hasSword !== undefined) player.hasSword = data.hasSword;
     if (data.bubbleShieldActive !== undefined) player.bubbleShieldActive = data.bubbleShieldActive;
 
+    // Tadpole upgrades
+    if (data.healthLevel !== undefined) player.healthLevel = data.healthLevel;
+    if (data.strengthLevel !== undefined) player.strengthLevel = data.strengthLevel;
+    if (data.capacityLevel !== undefined) player.capacityLevel = data.capacityLevel;
+    if (data.maxHealthBonus !== undefined) player.maxHealthBonus = data.maxHealthBonus;
+    if (data.strengthBonus !== undefined) player.strengthBonus = data.strengthBonus;
+
+    // Cell upgrades
+    if (data.cellHealthLevel !== undefined) player.cellHealthLevel = data.cellHealthLevel;
+    if (data.cellStrengthLevel !== undefined) player.cellStrengthLevel = data.cellStrengthLevel;
+    if (data.cellCapacityLevel !== undefined) player.cellCapacityLevel = data.cellCapacityLevel;
+    if (data.cellSpeedLevel !== undefined) player.cellSpeedLevel = data.cellSpeedLevel;
+    if (data.cellSpeedBonus !== undefined) player.cellSpeedBonus = data.cellSpeedBonus;
+    if (data.cellStrengthBonus !== undefined) player.cellStrengthBonus = data.cellStrengthBonus;
+    if (data.hasCellTail !== undefined) player.hasCellTail = data.hasCellTail;
+    if (data.canHibernate !== undefined) player.canHibernate = data.canHibernate;
+
     // Sync secondary creatures (for multi-creature system)
     if (data.creatures !== undefined) {
       player.creatures = data.creatures;
@@ -2122,8 +2139,23 @@ function convertAllPlayersToIdleNpcs() {
       tiredStartTime: 0,
       isSprinting: false,
       isIdlePlayer: true,
+      // Tadpole upgrades
+      healthLevel: player.healthLevel || 0,
+      strengthLevel: player.strengthLevel || 0,
+      capacityLevel: player.capacityLevel || 0,
+      maxHealthBonus: player.maxHealthBonus || 0,
+      strengthBonus: player.strengthBonus || 0,
+      // Cell upgrades
+      cellHealthLevel: player.cellHealthLevel || 0,
+      cellStrengthLevel: player.cellStrengthLevel || 0,
+      cellCapacityLevel: player.cellCapacityLevel || 0,
+      cellSpeedLevel: player.cellSpeedLevel || 0,
+      cellSpeedBonus: player.cellSpeedBonus || 0,
+      cellStrengthBonus: player.cellStrengthBonus || 0,
       hasProtector: player.hasProtector || false,
       hasSword: player.hasSword || false,
+      hasCellTail: player.hasCellTail || false,
+      canHibernate: player.canHibernate || false,
       bubbleShieldActive: player.bubbleShieldActive || false,
       lastMoveTime: Date.now()
     };
@@ -2364,8 +2396,23 @@ function convertPlayerToNPC(playerId, player, reason) {
       tiredStartTime: 0,
       isSprinting: false,
       isIdlePlayer: true,
+      // Tadpole upgrades
+      healthLevel: player.healthLevel || 0,
+      strengthLevel: player.strengthLevel || 0,
+      capacityLevel: player.capacityLevel || 0,
+      maxHealthBonus: player.maxHealthBonus || 0,
+      strengthBonus: player.strengthBonus || 0,
+      // Cell upgrades
+      cellHealthLevel: player.cellHealthLevel || 0,
+      cellStrengthLevel: player.cellStrengthLevel || 0,
+      cellCapacityLevel: player.cellCapacityLevel || 0,
+      cellSpeedLevel: player.cellSpeedLevel || 0,
+      cellSpeedBonus: player.cellSpeedBonus || 0,
+      cellStrengthBonus: player.cellStrengthBonus || 0,
       hasProtector: player.hasProtector || false,
       hasSword: player.hasSword || false,
+      hasCellTail: player.hasCellTail || false,
+      canHibernate: player.canHibernate || false,
       bubbleShieldActive: player.bubbleShieldActive || false
     };
 
