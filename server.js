@@ -668,8 +668,36 @@ function handleNPCDeath(npc) {
 // NPC update loop (runs at ~30fps on server)
 const NPC_UPDATE_INTERVAL = 33; // ~30fps
 setInterval(() => {
+  const now = Date.now();
+
   for (let npcId in npcs) {
-    updateNPC(npcs[npcId]);
+    const npc = npcs[npcId];
+
+    // Validate NPC position - remove NPCs with invalid positions
+    const hasValidX = typeof npc.x === 'number' && isFinite(npc.x);
+    const hasValidY = typeof npc.y === 'number' && isFinite(npc.y);
+    if (!hasValidX || !hasValidY) {
+      console.log(`Removing NPC ${npcId} with invalid position: x=${npc.x}, y=${npc.y}`);
+      delete npcs[npcId];
+      continue;
+    }
+
+    // Fix NaN velocities
+    if (typeof npc.vx !== 'number' || !isFinite(npc.vx)) npc.vx = 0;
+    if (typeof npc.vy !== 'number' || !isFinite(npc.vy)) npc.vy = 0;
+
+    // Clean up very old idle player NPCs (older than 48 hours with no activity)
+    if (npc.isIdlePlayer) {
+      const lastActivity = Math.max(npc.lastHit || 0, npc.lastMoveTime || 0, npc.targetChangeTime || 0);
+      const MAX_IDLE_AGE = 48 * 60 * 60 * 1000; // 48 hours
+      if (lastActivity > 0 && now - lastActivity > MAX_IDLE_AGE) {
+        console.log(`Removing stale idle NPC ${npc.name || npcId} (inactive for ${Math.round((now - lastActivity) / 3600000)}h)`);
+        delete npcs[npcId];
+        continue;
+      }
+    }
+
+    updateNPC(npc);
   }
 
   // Broadcast NPC state to all clients

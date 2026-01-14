@@ -1724,6 +1724,19 @@ socket.on('npcUpdate', (serverNpcs) => {
       npcs[npc.id] = npc;
     }
   });
+
+  // Clean up client-side NPCs that no longer exist on the server
+  // This fixes "ghost" NPCs that got stuck due to missed death events
+  for (let npcId in npcs) {
+    if (!serverNpcs[npcId]) {
+      console.log(`Removing ghost NPC ${npcId} (no longer on server)`);
+      delete npcs[npcId];
+      // Clear attack target if we were targeting this NPC
+      if (attackTarget && attackTarget.id === npcId) {
+        attackTarget = null;
+      }
+    }
+  }
 });
 
 socket.on('npcDamaged', (data) => {
