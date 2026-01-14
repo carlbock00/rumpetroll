@@ -77,6 +77,9 @@ const sessionMiddleware = session({
   }
 });
 
+// Trust proxy (required for secure cookies behind Render's HTTPS proxy)
+app.set('trust proxy', 1);
+
 // JSON body parser
 app.use(express.json());
 
