@@ -709,7 +709,7 @@ setInterval(() => {
 
 // Player state broadcast loop - authoritative server state for all players
 // This ensures all clients have consistent view of all players' state
-const PLAYER_UPDATE_INTERVAL = 50; // 20 updates per second
+const PLAYER_UPDATE_INTERVAL = 100; // 10 updates per second (reduced from 20 to prevent lag)
 setInterval(() => {
   // Only broadcast if there are active players
   const activePlayers = Object.values(players).filter(p => !p.isInactive);
