@@ -663,7 +663,6 @@ const techNodes = {
   // Capacity branch (branches from Health/Membrane)
   techVacuole: { type: 'capacity', level: 1, cost: 3, requires: 'techMembrane' },
   techLysosome: { type: 'capacity', level: 2, cost: 5, requires: 'techVacuole' },
-  techVesicle: { type: 'capacity', level: 3, cost: 8, requires: 'techLysosome' },
   // Strength branch (root)
   techFlagellum: { type: 'strength', level: 1, cost: 5, requires: null },
   techPseudopod: { type: 'strength', level: 2, cost: 8, requires: 'techFlagellum' },
@@ -1587,6 +1586,54 @@ socket.on('playerUpdated', (player) => {
   }
 });
 
+// Server authoritative state update - sync all player state continuously
+socket.on('playerStateUpdate', (playerStates) => {
+  for (let playerId in playerStates) {
+    // Skip our own player - we're the source of truth for ourselves
+    if (playerId === myId) continue;
+
+    const state = playerStates[playerId];
+
+    if (players[playerId]) {
+      // Update existing player with server state
+      const p = players[playerId];
+      p.x = state.x;
+      p.y = state.y;
+      p.vx = state.vx;
+      p.vy = state.vy;
+      p.health = state.health;
+      p.maxHealth = state.maxHealth;
+      p.food = state.food;
+      p.nucleotides = state.nucleotides;
+      p.type = state.type;
+      p.radius = state.radius;
+      p.name = state.name;
+      p.color = state.color;
+      p.score = state.score;
+      p.lastHit = state.lastHit;
+      p.bubbleShieldActive = state.bubbleShieldActive;
+      p.hasProtector = state.hasProtector;
+      p.hasSword = state.hasSword;
+      p.creatures = state.creatures || [];
+    } else {
+      // New player we didn't know about - add them
+      players[playerId] = {
+        ...state,
+        renderX: state.x,
+        renderY: state.y
+      };
+      initializeTadpole(players[playerId]);
+    }
+  }
+
+  // Remove players that are no longer in server state
+  for (let playerId in players) {
+    if (playerId !== myId && !playerStates[playerId]) {
+      delete players[playerId];
+    }
+  }
+});
+
 // Food event handlers
 socket.on('food', (serverFood) => {
   food = serverFood;
@@ -1600,16 +1647,17 @@ socket.on('foodSpawned', (newFood) => {
 });
 
 socket.on('foodEaten', (data) => {
-  // Save food item for vanishing animation before deleting
+  // Only add to vanishing if food still exists (wasn't already eaten locally)
+  // This prevents double-animations when we eat food ourselves
   const foodItem = food[data.foodId];
   if (foodItem) {
+    // Food eaten by another player - add vanish animation (no suck target)
     vanishingFood.push({
       ...foodItem,
       vanishTime: Date.now()
     });
   }
   delete food[data.foodId];
-  // Server doesn't track individual tadpole food, so we handle it client-side
 });
 
 socket.on('foodReset', (serverFood) => {
@@ -4688,8 +4736,15 @@ function update(deltaTime = 1) {
           if (currentNucleotides < 1) {
             tad.nucleotides = 1;
             eatenThisFrame.add(foodItem.id);
-            // Delete food immediately to prevent eating same food multiple times
-            // before server confirms (race condition fix)
+            // Add to vanishing with suck-in animation targeting this tadpole
+            vanishingFood.push({
+              ...foodItem,
+              vanishTime: Date.now(),
+              targetX: tad.x,
+              targetY: tad.y,
+              startX: foodItem.x,
+              startY: foodItem.y
+            });
             delete food[foodItem.id];
             socket.emit('eatFood', foodItem.id);
           }
@@ -4701,8 +4756,15 @@ function update(deltaTime = 1) {
           if (currentFood < foodCapacity) {
             tad.food = currentFood + 1;
             eatenThisFrame.add(foodItem.id);
-            // Delete food immediately to prevent eating same food multiple times
-            // before server confirms (race condition fix)
+            // Add to vanishing with suck-in animation targeting this tadpole
+            vanishingFood.push({
+              ...foodItem,
+              vanishTime: Date.now(),
+              targetX: tad.x,
+              targetY: tad.y,
+              startX: foodItem.x,
+              startY: foodItem.y
+            });
             delete food[foodItem.id];
             socket.emit('eatFood', foodItem.id);
           }
@@ -5094,6 +5156,43 @@ function update(deltaTime = 1) {
       vy: targetTad.vy
     });
     update.lastSent = Date.now();
+
+    // Sync full state to server less frequently (every 200ms)
+    if (!update.lastStateSync || Date.now() - update.lastStateSync > 200) {
+      const primaryTad = myTadpoles[0];
+      if (primaryTad) {
+        // Build creatures array for secondary creatures
+        const creatures = myTadpoles.slice(1).map(tad => ({
+          id: tad.id,
+          x: tad.x,
+          y: tad.y,
+          vx: tad.vx,
+          vy: tad.vy,
+          health: tad.health,
+          maxHealth: tad.maxHealth,
+          food: tad.food,
+          nucleotides: tad.nucleotides,
+          type: tad.type,
+          radius: tad.radius,
+          hasProtector: tad.hasProtector,
+          hasSword: tad.hasSword
+        }));
+
+        socket.emit('syncState', {
+          health: primaryTad.health,
+          maxHealth: primaryTad.maxHealth,
+          food: primaryTad.food,
+          nucleotides: primaryTad.nucleotides,
+          type: primaryTad.type,
+          radius: primaryTad.radius,
+          hasProtector: primaryTad.hasProtector,
+          hasSword: primaryTad.hasSword,
+          bubbleShieldActive: primaryTad.bubbleShieldActive,
+          creatures: creatures
+        });
+      }
+      update.lastStateSync = Date.now();
+    }
   }
 
   // Clean up expired death effects
@@ -5448,8 +5547,8 @@ function render() {
     }
   });
 
-  // Draw vanishing food with fade/shrink animation
-  const vanishDuration = 300; // 300ms vanish animation (same as spawn)
+  // Draw vanishing food with suck-in animation
+  const vanishDuration = 250; // Faster for suck-in effect
   for (let i = vanishingFood.length - 1; i >= 0; i--) {
     const foodItem = vanishingFood[i];
     const elapsed = Date.now() - foodItem.vanishTime;
@@ -5461,38 +5560,40 @@ function render() {
     }
 
     const progress = elapsed / vanishDuration;
-    // Shrink from 1 to 0, with slight overshoot at start
-    let scale;
-    if (progress < 0.2) {
-      // Slight expand at start (1 to 1.15)
-      scale = 1 + (progress / 0.2) * 0.15;
-    } else {
-      // Then shrink to 0
-      const shrinkProgress = (progress - 0.2) / 0.8;
-      scale = 1.15 * (1 - shrinkProgress);
+
+    // Calculate position - move towards target if we have one
+    let drawX = foodItem.x;
+    let drawY = foodItem.y;
+    if (foodItem.targetX !== undefined && foodItem.startX !== undefined) {
+      // Ease-in curve for accelerating suck effect
+      const easeProgress = progress * progress * progress; // Cubic ease-in
+      drawX = foodItem.startX + (foodItem.targetX - foodItem.startX) * easeProgress;
+      drawY = foodItem.startY + (foodItem.targetY - foodItem.startY) * easeProgress;
     }
 
-    const alpha = 1 - progress;
+    // Shrink as it gets sucked in
+    const scale = 1 - progress * 0.8; // Shrink to 20% of original size
+    const alpha = 1 - progress * progress; // Fade out with ease
     const drawRadius = foodItem.radius * scale;
 
-    // Vanish glow effect (same as spawn glow but fading out)
+    // Vanish glow effect (trails behind as it moves)
     const glowAlpha = alpha * 0.4;
     if (glowAlpha > 0.05) {
       ctx.beginPath();
-      ctx.arc(foodItem.x, foodItem.y, drawRadius * 2.5, 0, Math.PI * 2);
+      ctx.arc(drawX, drawY, drawRadius * 2.5, 0, Math.PI * 2);
       ctx.fillStyle = `rgba(200, 255, 200, ${glowAlpha * 0.4})`;
       ctx.fill();
     }
 
     // Outer glow
     ctx.beginPath();
-    ctx.arc(foodItem.x, foodItem.y, drawRadius + 3, 0, Math.PI * 2);
+    ctx.arc(drawX, drawY, drawRadius + 3, 0, Math.PI * 2);
     ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.3})`;
     ctx.fill();
 
     // Main food circle
     ctx.beginPath();
-    ctx.arc(foodItem.x, foodItem.y, drawRadius, 0, Math.PI * 2);
+    ctx.arc(drawX, drawY, drawRadius, 0, Math.PI * 2);
     ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
     ctx.fill();
   }

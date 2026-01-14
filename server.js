@@ -705,6 +705,47 @@ setInterval(() => {
   io.emit('npcUpdate', npcs);
 }, NPC_UPDATE_INTERVAL);
 
+// Player state broadcast loop - authoritative server state for all players
+// This ensures all clients have consistent view of all players' state
+const PLAYER_UPDATE_INTERVAL = 50; // 20 updates per second
+setInterval(() => {
+  // Only broadcast if there are active players
+  const activePlayers = Object.values(players).filter(p => !p.isInactive);
+  if (activePlayers.length > 0) {
+    // Build a compact player state object with all relevant properties
+    const playerStates = {};
+    for (let playerId in players) {
+      const p = players[playerId];
+      if (p.isInactive) continue;
+      playerStates[playerId] = {
+        id: playerId,
+        x: p.x,
+        y: p.y,
+        vx: p.vx || 0,
+        vy: p.vy || 0,
+        health: p.health,
+        maxHealth: p.maxHealth,
+        food: p.food || 0,
+        nucleotides: p.nucleotides || 0,
+        type: p.type || 'tadpole',
+        radius: p.radius || 8,
+        name: p.name,
+        color: p.color,
+        score: p.score || 0,
+        // Combat state
+        lastHit: p.lastHit || 0,
+        bubbleShieldActive: p.bubbleShieldActive || false,
+        // Creature properties
+        hasProtector: p.hasProtector || false,
+        hasSword: p.hasSword || false,
+        // Secondary creatures
+        creatures: p.creatures || []
+      };
+    }
+    io.emit('playerStateUpdate', playerStates);
+  }
+}, PLAYER_UPDATE_INTERVAL);
+
 // Spawn a single NPC near active players
 function spawnNPCNearPlayers(isCell) {
   const center = getSpawnCenter();
@@ -1330,6 +1371,28 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Handle full state sync from client - server stores authoritative state
+  socket.on('syncState', (data) => {
+    const player = players[socket.id];
+    if (!player) return;
+
+    // Sync all state from client (server validates but trusts client for now)
+    if (data.health !== undefined) player.health = data.health;
+    if (data.maxHealth !== undefined) player.maxHealth = data.maxHealth;
+    if (data.food !== undefined) player.food = data.food;
+    if (data.nucleotides !== undefined) player.nucleotides = data.nucleotides;
+    if (data.type !== undefined) player.type = data.type;
+    if (data.radius !== undefined) player.radius = data.radius;
+    if (data.hasProtector !== undefined) player.hasProtector = data.hasProtector;
+    if (data.hasSword !== undefined) player.hasSword = data.hasSword;
+    if (data.bubbleShieldActive !== undefined) player.bubbleShieldActive = data.bubbleShieldActive;
+
+    // Sync secondary creatures (for multi-creature system)
+    if (data.creatures !== undefined) {
+      player.creatures = data.creatures;
+    }
+  });
+
   // Handle player name change (simplified - connection handler does restoration for logged-in users)
   socket.on('setName', (data) => {
     // Support both old format (string) and new format (object)
@@ -1529,20 +1592,37 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Handle food eating
+  // Handle food eating - server is authoritative for food counts
   socket.on('eatFood', (foodId) => {
-    if (food[foodId] && players[socket.id]) {
+    const foodItem = food[foodId];
+    const player = players[socket.id];
+
+    if (foodItem && player) {
       // Remove the food
       delete food[foodId];
 
       // Increase player score
-      players[socket.id].score += 1;
+      player.score = (player.score || 0) + 1;
+
+      // Track food/nucleotides on server (authoritative)
+      if (foodItem.type === 'nucleotide') {
+        player.nucleotides = Math.min((player.nucleotides || 0) + 1, 1); // Max 1
+      } else {
+        // Regular food - check capacity
+        const foodCapacity = player.type === 'cell' ? 20 : 5; // Basic capacity
+        player.food = Math.min((player.food || 0) + 1, foodCapacity);
+      }
 
       // Broadcast food removal to all clients
-      io.emit('foodEaten', { foodId, playerId: socket.id, score: players[socket.id].score });
+      io.emit('foodEaten', {
+        foodId,
+        playerId: socket.id,
+        score: player.score,
+        food: player.food,
+        nucleotides: player.nucleotides
+      });
 
       // NOTE: Do NOT spawn replacement food here - the periodic food density system handles spawning
-      // Spawning here was causing double food spawns
     }
   });
 
