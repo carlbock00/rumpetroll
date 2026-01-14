@@ -1650,6 +1650,16 @@ socket.on('npcs', (serverNpcs) => {
 socket.on('npcUpdate', (serverNpcs) => {
   // Continuous NPC state updates from server
   Object.values(serverNpcs).forEach(serverNpc => {
+    // Always skip the current user's own idle NPCs
+    if (serverNpc.isIdlePlayer && currentUser &&
+        (serverNpc.name === currentUser.username || serverNpc.ownerName === currentUser.username)) {
+      // If it somehow got added, remove it
+      if (npcs[serverNpc.id]) {
+        delete npcs[serverNpc.id];
+      }
+      return;
+    }
+
     if (npcs[serverNpc.id]) {
       // Update existing NPC
       const npc = npcs[serverNpc.id];
