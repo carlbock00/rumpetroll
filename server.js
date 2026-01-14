@@ -307,6 +307,46 @@ function updateNPC(npc) {
     const dx = closestVulnerableCreature ? npc.x - closestVulnerableCreature.x : npc.x - player.x;
     const dy = closestVulnerableCreature ? npc.y - closestVulnerableCreature.y : npc.y - player.y;
 
+    // Check if the closest vulnerable creature is protected by any protector's bubble shield FIRST
+    // If shielded, NPC cells should not chase or attack at all
+    const targetX = closestVulnerableCreature ? closestVulnerableCreature.x : player.x;
+    const targetY = closestVulnerableCreature ? closestVulnerableCreature.y : player.y;
+    let isProtectedByShield = false;
+
+    // Check all players for active protector shields that cover the target creature
+    for (let protectorId in players) {
+      const protector = players[protectorId];
+      if (!protector) continue;
+      if (protector.hasProtector && protector.bubbleShieldActive) {
+        // Find the protector cell's position (could be primary or secondary creature)
+        let shieldX = protector.x;
+        let shieldY = protector.y;
+
+        // If protector's primary isn't a cell, check secondary creatures for the protector cell
+        if (protector.type !== 'cell' && protector.creatures) {
+          const protectorCell = protector.creatures.find(c => c.type === 'cell' && c.hasProtector);
+          if (protectorCell && protectorCell.x !== undefined) {
+            shieldX = protectorCell.x;
+            shieldY = protectorCell.y;
+          }
+        }
+
+        const shieldRadius = (protector.radius || 40) * 12;
+        const shieldDx = targetX - shieldX;
+        const shieldDy = targetY - shieldY;
+        const shieldDist = Math.sqrt(shieldDx * shieldDx + shieldDy * shieldDy);
+        if (shieldDist < shieldRadius) {
+          isProtectedByShield = true;
+          break;
+        }
+      }
+    }
+
+    // For NPC cells: if target is shielded, don't chase or attack - skip this player entirely
+    if (npc.type === 'cell' && isProtectedByShield && hasVulnerableCreature) {
+      continue; // Skip to next player - this target is protected
+    }
+
     const cellCanChase = npc.type === 'cell' && !npc.isTired && hasVulnerableCreature;
     const cellCanAttack = npc.type === 'cell' && hasVulnerableCreature; // Cells can attack even when tired
     const isAggressive = npc.provoked || cellCanChase;
@@ -348,42 +388,6 @@ function updateNPC(npc) {
     // Idle players CAN still attack when provoked and player is in range
     // NPC cells NEVER attack player cells - only tadpoles (but will attack if player has any tadpoles)
     const canAttackTarget = !(npc.type === 'cell' && !hasVulnerableCreature);
-
-    // Check if the closest vulnerable creature is protected by any protector's bubble shield
-    // Use the vulnerable creature's position, not the player's primary position
-    const targetX = closestVulnerableCreature ? closestVulnerableCreature.x : player.x;
-    const targetY = closestVulnerableCreature ? closestVulnerableCreature.y : player.y;
-    let isProtectedByShield = false;
-
-    // Check all players for active protector shields that cover the target creature
-    // Must check distance to shield center - having shield active doesn't mean target is protected
-    for (let protectorId in players) {
-      const protector = players[protectorId];
-      if (!protector) continue;
-      if (protector.hasProtector && protector.bubbleShieldActive) {
-        // Find the protector cell's position (could be primary or secondary creature)
-        let shieldX = protector.x;
-        let shieldY = protector.y;
-
-        // If protector's primary isn't a cell, check secondary creatures for the protector cell
-        if (protector.type !== 'cell' && protector.creatures) {
-          const protectorCell = protector.creatures.find(c => c.type === 'cell' && c.hasProtector);
-          if (protectorCell && protectorCell.x !== undefined) {
-            shieldX = protectorCell.x;
-            shieldY = protectorCell.y;
-          }
-        }
-
-        const shieldRadius = (protector.radius || 40) * 12;
-        const shieldDx = targetX - shieldX;
-        const shieldDy = targetY - shieldY;
-        const shieldDist = Math.sqrt(shieldDx * shieldDx + shieldDy * shieldDy);
-        if (shieldDist < shieldRadius) {
-          isProtectedByShield = true;
-          break;
-        }
-      }
-    }
 
     if (canAttackWhileTired && canAttackTarget && dist < ATTACK_RANGE && now - npc.lastAttack > NPC_ATTACK_COOLDOWN && !isProtectedByShield) {
       const baseDamage = npc.type === 'cell' ? NPC_CELL_DAMAGE : NPC_TADPOLE_DAMAGE;
