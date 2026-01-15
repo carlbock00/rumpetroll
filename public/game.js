@@ -1801,10 +1801,26 @@ socket.on('playerStateUpdate', (playerStates) => {
     if (players[playerId]) {
       // Update existing player with server state
       const p = players[playerId];
-      p.x = state.x;
-      p.y = state.y;
+
+      // Store server target position for smooth interpolation
+      // Instead of snapping, we'll smoothly blend towards server position
+      p.serverX = state.x;
+      p.serverY = state.y;
       p.vx = state.vx;
       p.vy = state.vy;
+
+      // If this is the first update or player teleported far, snap immediately
+      const dx = state.x - (p.x || state.x);
+      const dy = state.y - (p.y || state.y);
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > 200 || !p.x) {
+        // Teleport - snap to position
+        p.x = state.x;
+        p.y = state.y;
+        p.renderX = state.x;
+        p.renderY = state.y;
+      }
+      // Otherwise, let interpolateVisuals handle smooth movement
       p.health = state.health;
       p.maxHealth = state.maxHealth;
       p.food = state.food;
@@ -5779,6 +5795,20 @@ function interpolateVisuals() {
     if (!player.renderX) player.renderX = player.x;
     if (!player.renderY) player.renderY = player.y;
 
+    // Use velocity-based prediction + server correction for smooth movement
+    const serverX = player.serverX !== undefined ? player.serverX : player.x;
+    const serverY = player.serverY !== undefined ? player.serverY : player.y;
+
+    // Predict position based on velocity
+    const predictedX = player.x + (player.vx || 0) * renderDeltaTime * 60;
+    const predictedY = player.y + (player.vy || 0) * renderDeltaTime * 60;
+
+    // Blend between predicted and server position (correct towards server)
+    const correctionFactor = 0.15; // How fast to correct towards server
+    player.x = predictedX + (serverX - predictedX) * correctionFactor;
+    player.y = predictedY + (serverY - predictedY) * correctionFactor;
+
+    // Smooth render position towards actual position
     player.renderX += (player.x - player.renderX) * interpFactor;
     player.renderY += (player.y - player.renderY) * interpFactor;
 
@@ -6213,12 +6243,40 @@ function render() {
     }
     // If player has creatures array with data, draw from that (more accurate positions)
     if (player.creatures && player.creatures.length > 0) {
+      // Initialize creature render cache if needed (for smooth interpolation)
+      if (!player._creatureRenderCache) {
+        player._creatureRenderCache = {};
+      }
+
       player.creatures.forEach((creature, index) => {
+        const creatureId = creature.id || `creature_${index}`;
+
+        // Get or create cached render data for this creature
+        let cached = player._creatureRenderCache[creatureId];
+        if (!cached) {
+          cached = {
+            renderX: creature.x,
+            renderY: creature.y,
+            x: creature.x,
+            y: creature.y
+          };
+          player._creatureRenderCache[creatureId] = cached;
+        }
+
+        // Smooth interpolation towards server position
+        const lerpFactor = 0.2;
+        cached.x += (creature.x - cached.x) * lerpFactor;
+        cached.y += (creature.y - cached.y) * lerpFactor;
+        cached.renderX += (cached.x - cached.renderX) * lerpFactor;
+        cached.renderY += (cached.y - cached.renderY) * lerpFactor;
+
         // Create a renderable creature object with all needed properties
         const renderCreature = {
           ...creature,
-          renderX: creature.x,
-          renderY: creature.y,
+          x: cached.x,
+          y: cached.y,
+          renderX: cached.renderX,
+          renderY: cached.renderY,
           color: player.color || '#4a5a6a',
           name: index === 0 ? player.name : null, // Only show name on primary creature
           // Ensure basic properties exist for rendering
@@ -6231,6 +6289,14 @@ function render() {
         };
         drawEntity(renderCreature, false, false);
       });
+
+      // Clean up old cached creatures that no longer exist
+      const currentIds = new Set(player.creatures.map((c, i) => c.id || `creature_${i}`));
+      for (let id in player._creatureRenderCache) {
+        if (!currentIds.has(id)) {
+          delete player._creatureRenderCache[id];
+        }
+      }
     } else {
       // Fallback: draw main player entity if no creatures array
       drawEntity(player, false, false);
