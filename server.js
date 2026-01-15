@@ -1432,6 +1432,50 @@ io.on('connection', (socket) => {
             io.emit('npcDied', { id: id, x: npc.x, y: npc.y, radius: npc.radius });
             delete npcs[id];
           });
+        } else {
+          // No idle NPCs found - try to restore from userPositions as fallback
+          // This handles the case where server restarted but idle NPCs weren't loaded yet
+          const savedState = userPositions[sessionUsername];
+          if (savedState && !savedState.diedWhileInactive && savedState.type) {
+            console.log(`Connection: Restoring from userPositions for ${sessionUsername} (no idle NPCs found)`);
+            const p = players[socket.id];
+
+            // Restore position and type
+            p.x = savedState.x;
+            p.y = savedState.y;
+            p.type = savedState.type;
+            p.radius = savedState.radius || (savedState.type === 'cell' ? 40 : (savedState.type === 'bacteria' ? 18 : 8));
+            p.health = savedState.health;
+            p.maxHealth = savedState.maxHealth;
+            p.food = savedState.food;
+            p.nucleotides = savedState.nucleotides || 0;
+
+            // Tadpole upgrades
+            p.healthLevel = savedState.healthLevel || 0;
+            p.strengthLevel = savedState.strengthLevel || 0;
+            p.capacityLevel = savedState.capacityLevel || 0;
+            p.maxHealthBonus = savedState.maxHealthBonus || 0;
+            p.strengthBonus = savedState.strengthBonus || 0;
+
+            // Cell upgrades
+            p.cellHealthLevel = savedState.cellHealthLevel || 0;
+            p.cellStrengthLevel = savedState.cellStrengthLevel || 0;
+            p.cellCapacityLevel = savedState.cellCapacityLevel || 0;
+            p.cellSpeedLevel = savedState.cellSpeedLevel || 0;
+            p.cellSpeedBonus = savedState.cellSpeedBonus || 0;
+            p.cellStrengthBonus = savedState.cellStrengthBonus || 0;
+            p.cellMaxHealthBonus = savedState.cellMaxHealthBonus || 0;
+            p.hasProtector = savedState.hasProtector || false;
+            p.bubbleShieldActive = savedState.bubbleShieldActive || false;
+            p.hasSword = savedState.hasSword || false;
+            p.hasCellTail = savedState.hasCellTail || false;
+            p.canHibernate = savedState.canHibernate || false;
+
+            // If there are saved creatures, restore them
+            if (savedState.creatures && savedState.creatures.length > 0) {
+              p.restoredCreatures = savedState.creatures;
+            }
+          }
         }
       }
     } else {
@@ -2295,35 +2339,81 @@ io.on('connection', (socket) => {
     if (!players[socket.id]) {
       console.log(`Player ${socket.id} tab became visible, re-adding to players`);
 
-      // Check if they exist as an NPC and preserve their state
-      const existingNPC = npcs[socket.id];
-      if (existingNPC) {
+      // Find ALL NPCs that belong to this player (they have IDs like ${socket.id}_creature_0)
+      const playerNpcs = [];
+      for (let npcId in npcs) {
+        if (npcId === socket.id || npcId.startsWith(`${socket.id}_creature_`)) {
+          playerNpcs.push({ id: npcId, npc: npcs[npcId] });
+        }
+      }
+
+      if (playerNpcs.length > 0) {
+        console.log(`Found ${playerNpcs.length} NPCs for player ${socket.id}`);
+        // Use the first NPC for primary player state
+        const firstNpc = playerNpcs[0].npc;
+
+        // Build creatures array from all NPCs
+        const creatures = playerNpcs.map(({ id, npc }) => ({
+          id: npc.originalCreatureId || id,
+          x: npc.x,
+          y: npc.y,
+          type: npc.type,
+          radius: npc.radius,
+          health: npc.health,
+          maxHealth: npc.maxHealth,
+          food: npc.food,
+          nucleotides: npc.nucleotides || 0,
+          angle: npc.angle,
+          healthLevel: npc.healthLevel || 0,
+          strengthLevel: npc.strengthLevel || 0,
+          capacityLevel: npc.capacityLevel || 0,
+          maxHealthBonus: npc.maxHealthBonus || 0,
+          strengthBonus: npc.strengthBonus || 0,
+          cellHealthLevel: npc.cellHealthLevel || 0,
+          cellStrengthLevel: npc.cellStrengthLevel || 0,
+          cellCapacityLevel: npc.cellCapacityLevel || 0,
+          cellSpeedLevel: npc.cellSpeedLevel || 0,
+          cellSpeedBonus: npc.cellSpeedBonus || 0,
+          cellStrengthBonus: npc.cellStrengthBonus || 0,
+          hasProtector: npc.hasProtector || false,
+          bubbleShieldActive: npc.bubbleShieldActive || false,
+          hasSword: npc.hasSword || false,
+          hasCellTail: npc.hasCellTail || false,
+          canHibernate: npc.canHibernate || false
+        }));
+
         players[socket.id] = {
           id: socket.id,
-          x: existingNPC.x,
-          y: existingNPC.y,
-          vx: existingNPC.vx || 0,
-          vy: existingNPC.vy || 0,
-          color: existingNPC.type === 'cell' ? '#4a5f7f' : '#FFFFFF',
-          radius: existingNPC.radius,
+          x: firstNpc.x,
+          y: firstNpc.y,
+          vx: firstNpc.vx || 0,
+          vy: firstNpc.vy || 0,
+          color: firstNpc.type === 'cell' ? '#4a5f7f' : '#FFFFFF',
+          radius: firstNpc.radius,
           score: 0,
-          name: `Player${Math.floor(Math.random() * 1000)}`,
+          name: firstNpc.name || firstNpc.ownerName || `Player${Math.floor(Math.random() * 1000)}`,
           lastMoveTime: Date.now(),
           isIdle: false,
           isInactive: false,
-          type: existingNPC.type || 'tadpole',
-          food: existingNPC.food || 0,
-          angle: existingNPC.angle || 0,
-          wiggleOffset: existingNPC.wiggleOffset || Math.random() * Math.PI * 2,
-          creatures: existingNPC.creatures || [] // Preserve creatures from NPC
+          type: firstNpc.type || 'tadpole',
+          food: firstNpc.food || 0,
+          angle: firstNpc.angle || 0,
+          wiggleOffset: firstNpc.wiggleOffset || Math.random() * Math.PI * 2,
+          creatures: creatures
         };
-        // Remove from NPCs
-        delete npcs[socket.id];
+
+        // Remove ALL NPCs for this player
+        playerNpcs.forEach(({ id, npc }) => {
+          io.emit('npcDied', { id: id, x: npc.x, y: npc.y, radius: npc.radius });
+          delete npcs[id];
+        });
       } else {
+        // No NPCs found - create fresh player
+        const spawnPos = findSafeSpawnPosition();
         players[socket.id] = {
           id: socket.id,
-          x: (Math.random() - 0.5) * 3000,
-          y: (Math.random() - 0.5) * 3000,
+          x: spawnPos.x,
+          y: spawnPos.y,
           vx: 0,
           vy: 0,
           color: '#FFFFFF',
