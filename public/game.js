@@ -2665,6 +2665,9 @@ function updateCellTail(entity, time, isRemote = false) {
       while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
       while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
       entity.angle += angleDiff * 0.06; // Slower, more gradual turn rate
+      // Normalize angle to prevent large value drift
+      while (entity.angle > Math.PI) entity.angle -= Math.PI * 2;
+      while (entity.angle < -Math.PI) entity.angle += Math.PI * 2;
     }
   }
 
@@ -5641,6 +5644,24 @@ function update(deltaTime = 1) {
     // Update cell tail for cells with speed upgrade level 2+
     if (tad.type === 'cell' && tad.hasCellTail) {
       updateCellTail(tad, time);
+    }
+    // Update angle for cells WITHOUT hasCellTail (so they still face movement direction)
+    if (tad.type === 'cell' && !tad.hasCellTail) {
+      const vx = tad.vx || 0;
+      const vy = tad.vy || 0;
+      const speed = Math.sqrt(vx * vx + vy * vy);
+      if (speed > 0.1) {
+        const targetAngle = Math.atan2(vy, vx);
+        let angleDiff = targetAngle - (tad.angle || 0);
+        while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+        while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+        tad.angle = (tad.angle || 0) + angleDiff * 0.06;
+        // Normalize angle
+        while (tad.angle > Math.PI) tad.angle -= Math.PI * 2;
+        while (tad.angle < -Math.PI) tad.angle += Math.PI * 2;
+      } else if (tad.angle === undefined) {
+        tad.angle = 0;
+      }
     }
   }
 
