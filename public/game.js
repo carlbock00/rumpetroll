@@ -6301,7 +6301,13 @@ function render() {
             renderY: creature.y,
             x: creature.x,
             y: creature.y,
-            angle: creature.angle || 0
+            angle: creature.angle || 0,
+            // Cache visual properties so they don't regenerate every frame
+            wiggleOffset: Math.random() * Math.PI * 2,
+            hairs: null, // Will be generated once in drawCell and cached here
+            blobShape: null, // For bacteria
+            cellTail: null, // For cells with Motor Tail
+            tail: null // For tadpoles
           };
           player._creatureRenderCache[creatureId] = cached;
         }
@@ -6346,9 +6352,29 @@ function render() {
           health: creature.health || 100,
           maxHealth: creature.maxHealth || creature.health || 100,
           lastHit: 0,
-          lastAttack: 0
+          lastAttack: 0,
+          // Use cached visual properties to prevent regeneration every frame
+          wiggleOffset: cached.wiggleOffset,
+          hairs: cached.hairs,
+          blobShape: cached.blobShape,
+          cellTail: cached.cellTail,
+          tail: cached.tail
         };
         drawEntity(renderCreature, false, false);
+
+        // Store any newly generated visual properties back to cache
+        if (renderCreature.hairs && !cached.hairs) {
+          cached.hairs = renderCreature.hairs;
+        }
+        if (renderCreature.blobShape && !cached.blobShape) {
+          cached.blobShape = renderCreature.blobShape;
+        }
+        if (renderCreature.cellTail && !cached.cellTail) {
+          cached.cellTail = renderCreature.cellTail;
+        }
+        if (renderCreature.tail && !cached.tail) {
+          cached.tail = renderCreature.tail;
+        }
       });
 
       // Clean up old cached creatures that no longer exist
