@@ -717,9 +717,14 @@ body {
   background: rgba(100, 200, 150, 0.5);
 }
 
-/* Cell tech tree has different node widths, adjust connector */
+/* Cell tech tree connector widths */
 #cellTechTree .sub-branch-lines {
-  width: 115px;
+  width: 125px; /* 110px node width + 15px gap */
+}
+
+/* Defense branch sub-branches need wider connector due to storage branch being wider */
+#cellTechTree .defense-branch > .sub-branches > .sub-branch-lines {
+  width: 140px; /* Adjusted for ER + Storage branch spacing */
 }
 
 /* Connector from parent node down to the horizontal split */
@@ -1744,9 +1749,9 @@ body {
   top: 10px;
   left: 50%;
   transform: translateX(-50%);
-  width: 125px;
+  width: 115px; /* 100px node width + 15px gap */
   height: 2px;
-  background: rgba(100, 200, 150, 0.5);
+  background: rgba(100, 150, 220, 0.5); /* Blue theme for cell tech */
 }
 
 .storage-sub-branches::before {
@@ -1757,7 +1762,7 @@ body {
   transform: translateX(-50%);
   width: 2px;
   height: 12px;
-  background: rgba(100, 200, 150, 0.5);
+  background: rgba(100, 150, 220, 0.5); /* Blue theme for cell tech */
 }
 
 .storage-sub-branches .sub-branch {
@@ -1775,7 +1780,12 @@ body {
   transform: translateX(-50%);
   width: 2px;
   height: 10px;
-  background: rgba(100, 200, 150, 0.5);
+  background: rgba(100, 150, 220, 0.5); /* Blue theme for cell tech */
+}
+
+/* Storage branch width to match ER branch */
+.storage-branch {
+  min-width: 110px;
 }
 
 .hibernate-branch .tech-node {
@@ -1789,17 +1799,17 @@ body {
 /* Hibernation Menu */
 .hibernation-menu {
   position: fixed;
-  top: 50%;
+  top: 30%;
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 2000;
-  background: rgba(20, 25, 35, 0.95);
-  border: 2px solid rgba(100, 150, 220, 0.4);
-  border-radius: 15px;
-  padding: 25px;
-  min-width: 350px;
-  max-width: 400px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  background: rgba(20, 25, 35, 0.9);
+  border: 1px solid rgba(100, 150, 220, 0.4);
+  border-radius: 10px;
+  padding: 15px;
+  min-width: 260px;
+  max-width: 300px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
 }
 
 .hibernation-menu.hidden {
@@ -1808,23 +1818,23 @@ body {
 
 .hibernation-container h2 {
   color: #aac4e0;
-  font-size: 22px;
-  margin: 0 0 15px 0;
+  font-size: 16px;
+  margin: 0 0 10px 0;
   text-align: center;
 }
 
 .hibernation-timer {
   display: flex;
   align-items: center;
-  gap: 15px;
-  margin-bottom: 20px;
+  gap: 10px;
+  margin-bottom: 12px;
 }
 
 .timer-bar {
   flex: 1;
-  height: 8px;
+  height: 6px;
   background: rgba(50, 60, 80, 0.8);
-  border-radius: 4px;
+  border-radius: 3px;
   overflow: hidden;
 }
 
@@ -1837,32 +1847,32 @@ body {
 
 #hibernationTimeLeft {
   color: rgba(158, 179, 204, 0.9);
-  font-size: 14px;
-  min-width: 30px;
+  font-size: 12px;
+  min-width: 25px;
 }
 
 .hibernation-info {
   color: rgba(158, 179, 204, 0.8);
-  font-size: 13px;
-  margin-bottom: 15px;
+  font-size: 11px;
+  margin-bottom: 10px;
   text-align: center;
 }
 
 .hibernation-options {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-bottom: 20px;
+  gap: 6px;
+  margin-bottom: 12px;
 }
 
 .hibernation-option {
   display: flex;
   align-items: center;
-  gap: 15px;
-  padding: 15px;
+  gap: 10px;
+  padding: 10px;
   background: rgba(40, 50, 70, 0.6);
-  border: 2px solid rgba(80, 100, 140, 0.3);
-  border-radius: 10px;
+  border: 1px solid rgba(80, 100, 140, 0.3);
+  border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -1888,7 +1898,7 @@ body {
 }
 
 .hibernation-icon {
-  font-size: 28px;
+  font-size: 20px;
 }
 
 .hibernation-content {
@@ -1897,30 +1907,30 @@ body {
 
 .hibernation-name {
   color: #aac4e0;
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 600;
-  margin-bottom: 3px;
+  margin-bottom: 2px;
 }
 
 .hibernation-desc {
   color: rgba(158, 179, 204, 0.8);
-  font-size: 12px;
+  font-size: 10px;
 }
 
 .hibernation-warning {
   color: rgba(200, 150, 100, 0.8);
-  font-size: 11px;
-  margin-top: 4px;
+  font-size: 10px;
+  margin-top: 3px;
 }
 
 .hibernation-cancel-btn {
   width: 100%;
-  padding: 12px;
+  padding: 8px;
   background: rgba(100, 60, 70, 0.7);
   border: 1px solid rgba(180, 100, 110, 0.4);
-  border-radius: 8px;
+  border-radius: 6px;
   color: #e0b0b5;
-  font-size: 14px;
+  font-size: 12px;
   cursor: pointer;
   transition: all 0.2s ease;
 }

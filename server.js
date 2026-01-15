@@ -701,7 +701,7 @@ function handleNPCDeath(npc) {
       radius: 6,
       type: 'nucleotide',
       spawnTime: Date.now(),
-      ttl: 90000 + Math.random() * 90000 // 1.5-3 minutes
+      ttl: 30000 // 30 seconds
     };
     io.emit('foodSpawned', food[id]);
   }
@@ -828,13 +828,15 @@ setInterval(() => {
         name: p.name,
         color: p.color,
         score: p.score || 0,
+        angle: p.angle || 0,
         // Combat state
         lastHit: p.lastHit || 0,
         bubbleShieldActive: p.bubbleShieldActive || false,
         // Creature properties
         hasProtector: p.hasProtector || false,
         hasSword: p.hasSword || false,
-        // Secondary creatures
+        hasCellTail: p.hasCellTail || false,
+        // All creatures (for multi-creature visibility)
         creatures: p.creatures || []
       };
     }
@@ -1327,7 +1329,8 @@ io.on('connection', (socket) => {
       name: sessionUsername || `Player${Math.floor(Math.random() * 1000)}`,
       lastMoveTime: Date.now(),
       isIdle: false,
-      type: 'tadpole'
+      type: 'tadpole',
+      creatures: [] // Initialize creatures array
     };
 
     // If logged in, set up user tracking and check for position restoration
@@ -1504,12 +1507,42 @@ io.on('connection', (socket) => {
       // Save position by username for persistence across reconnections
       // But don't overwrite if user has a diedWhileInactive flag (they're dead, waiting to see death screen)
       const playerName = players[targetPlayerId].name;
+      const p = players[targetPlayerId];
       if (playerName && !playerName.startsWith('Player') && !userPositions[playerName]?.diedWhileInactive) {
         userPositions[playerName] = {
           x: data.x,
           y: data.y,
-          type: players[targetPlayerId].type || 'tadpole',
-          radius: players[targetPlayerId].radius || 8
+          type: p.type || 'tadpole',
+          radius: p.radius || 8,
+          // State
+          health: p.health,
+          maxHealth: p.maxHealth,
+          food: p.food,
+          nucleotides: p.nucleotides || 0,
+          // Tadpole upgrades
+          healthLevel: p.healthLevel || 0,
+          strengthLevel: p.strengthLevel || 0,
+          capacityLevel: p.capacityLevel || 0,
+          maxHealthBonus: p.maxHealthBonus || 0,
+          strengthBonus: p.strengthBonus || 0,
+          // Cell upgrades
+          cellHealthLevel: p.cellHealthLevel || 0,
+          cellStrengthLevel: p.cellStrengthLevel || 0,
+          cellCapacityLevel: p.cellCapacityLevel || 0,
+          cellSpeedLevel: p.cellSpeedLevel || 0,
+          cellSpeedBonus: p.cellSpeedBonus || 0,
+          cellStrengthBonus: p.cellStrengthBonus || 0,
+          cellMaxHealthBonus: p.cellMaxHealthBonus || 0,
+          // Cell abilities
+          hasProtector: p.hasProtector || false,
+          bubbleShieldActive: p.bubbleShieldActive || false,
+          shieldLastCharge: p.shieldLastCharge,
+          hasSword: p.hasSword || false,
+          hasCellTail: p.hasCellTail || false,
+          canHibernate: p.canHibernate || false,
+          isFarming: p.isFarming || false,
+          // Secondary creatures
+          creatures: p.creatures || []
         };
       }
 
@@ -1566,6 +1599,10 @@ io.on('connection', (socket) => {
     // Sync secondary creatures (for multi-creature system)
     if (data.creatures !== undefined) {
       player.creatures = data.creatures;
+      // Debug: log when multiple creatures are synced (for debugging multi-creature visibility)
+      if (data.creatures.length > 1) {
+        console.log(`Player ${socket.id} synced ${data.creatures.length} creatures:`, data.creatures.map(c => `${c.type}@${Math.round(c.x)},${Math.round(c.y)}`).join(', '));
+      }
     }
   });
 
@@ -1738,6 +1775,143 @@ io.on('connection', (socket) => {
 
       io.emit('playerUpdated', players[socket.id]);
       return;
+    }
+
+    // Fallback: Try to restore from userPositions if no idle NPCs exist
+    // This handles the case where server restarted but idle NPCs weren't saved
+    const savedState = userPositions[cleanName];
+    if (savedState && !savedState.diedWhileInactive && savedState.type) {
+      console.log(`setName: Restoring from userPositions for ${cleanName}`);
+
+      if (players[socket.id]) {
+        const p = players[socket.id];
+
+        // Restore basic state
+        p.x = savedState.x;
+        p.y = savedState.y;
+        p.type = savedState.type;
+        p.radius = savedState.radius || (savedState.type === 'cell' ? 40 : 8);
+        p.name = cleanName;
+        p.health = savedState.health;
+        p.maxHealth = savedState.maxHealth;
+        p.food = savedState.food;
+        p.nucleotides = savedState.nucleotides || 0;
+
+        // Tadpole upgrades
+        p.healthLevel = savedState.healthLevel || 0;
+        p.strengthLevel = savedState.strengthLevel || 0;
+        p.capacityLevel = savedState.capacityLevel || 0;
+        p.maxHealthBonus = savedState.maxHealthBonus || 0;
+        p.strengthBonus = savedState.strengthBonus || 0;
+
+        // Cell upgrades
+        p.cellHealthLevel = savedState.cellHealthLevel || 0;
+        p.cellStrengthLevel = savedState.cellStrengthLevel || 0;
+        p.cellCapacityLevel = savedState.cellCapacityLevel || 0;
+        p.cellSpeedLevel = savedState.cellSpeedLevel || 0;
+        p.cellSpeedBonus = savedState.cellSpeedBonus || 0;
+        p.cellStrengthBonus = savedState.cellStrengthBonus || 0;
+        p.cellMaxHealthBonus = savedState.cellMaxHealthBonus || 0;
+
+        // Cell abilities
+        p.hasProtector = savedState.hasProtector || false;
+        p.bubbleShieldActive = savedState.bubbleShieldActive || false;
+        p.shieldLastCharge = savedState.shieldLastCharge;
+        p.hasSword = savedState.hasSword || false;
+        p.hasCellTail = savedState.hasCellTail || false;
+        p.canHibernate = savedState.canHibernate || false;
+        p.isFarming = savedState.isFarming || false;
+
+        // Secondary creatures
+        p.creatures = savedState.creatures || [];
+
+        p.testMode = false;
+
+        // Build creatures array for client restore
+        const restoredCreatures = [];
+
+        // First creature is the main one
+        restoredCreatures.push({
+          id: socket.id,
+          x: p.x,
+          y: p.y,
+          type: p.type,
+          radius: p.radius,
+          health: p.health,
+          maxHealth: p.maxHealth,
+          food: p.food,
+          nucleotides: p.nucleotides,
+          healthLevel: p.healthLevel,
+          strengthLevel: p.strengthLevel,
+          capacityLevel: p.capacityLevel,
+          maxHealthBonus: p.maxHealthBonus,
+          strengthBonus: p.strengthBonus,
+          cellHealthLevel: p.cellHealthLevel,
+          cellStrengthLevel: p.cellStrengthLevel,
+          cellCapacityLevel: p.cellCapacityLevel,
+          cellSpeedLevel: p.cellSpeedLevel,
+          cellSpeedBonus: p.cellSpeedBonus,
+          cellStrengthBonus: p.cellStrengthBonus,
+          cellMaxHealthBonus: p.cellMaxHealthBonus,
+          hasProtector: p.hasProtector,
+          bubbleShieldActive: p.bubbleShieldActive,
+          hasSword: p.hasSword,
+          hasCellTail: p.hasCellTail,
+          canHibernate: p.canHibernate,
+          isFarming: p.isFarming
+        });
+
+        // Add any secondary creatures
+        if (savedState.creatures && savedState.creatures.length > 1) {
+          for (let i = 1; i < savedState.creatures.length; i++) {
+            const c = savedState.creatures[i];
+            restoredCreatures.push({
+              id: `${socket.id}_creature_${i}`,
+              x: c.x,
+              y: c.y,
+              type: c.type,
+              radius: c.radius,
+              health: c.health,
+              maxHealth: c.maxHealth,
+              food: c.food,
+              nucleotides: c.nucleotides || 0,
+              healthLevel: c.healthLevel || 0,
+              strengthLevel: c.strengthLevel || 0,
+              capacityLevel: c.capacityLevel || 0,
+              maxHealthBonus: c.maxHealthBonus || 0,
+              strengthBonus: c.strengthBonus || 0,
+              cellHealthLevel: c.cellHealthLevel || 0,
+              cellStrengthLevel: c.cellStrengthLevel || 0,
+              cellCapacityLevel: c.cellCapacityLevel || 0,
+              cellSpeedLevel: c.cellSpeedLevel || 0,
+              cellSpeedBonus: c.cellSpeedBonus || 0,
+              cellStrengthBonus: c.cellStrengthBonus || 0,
+              cellMaxHealthBonus: c.cellMaxHealthBonus || 0,
+              hasProtector: c.hasProtector || false,
+              bubbleShieldActive: c.bubbleShieldActive || false,
+              hasSword: c.hasSword || false,
+              hasCellTail: c.hasCellTail || false,
+              canHibernate: c.canHibernate || false,
+              isFarming: c.isFarming || false
+            });
+          }
+        }
+
+        // Send restored creatures to client
+        socket.emit('restoreCreatures', {
+          creatures: restoredCreatures
+        });
+
+        // Track socket-to-user mapping
+        if (!userSockets[cleanName]) {
+          userSockets[cleanName] = new Set();
+        }
+        userSockets[cleanName].add(socket.id);
+        socketToUser[socket.id] = cleanName;
+
+        io.emit('playerUpdated', p);
+        return;
+      }
     }
 
     // Update the player's name (no restoration - connection handler already did that)
@@ -2076,6 +2250,45 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Handle periodic creature sync from client
+  // This keeps server's player.creatures up-to-date for disconnect handling
+  socket.on('syncCreatures', (data) => {
+    if (players[socket.id] && data && data.creatures && data.creatures.length > 0) {
+      players[socket.id].creatures = data.creatures;
+      // Also update primary player stats from first creature
+      const primary = data.creatures[0];
+      if (primary) {
+        players[socket.id].type = primary.type;
+        players[socket.id].health = primary.health;
+        players[socket.id].maxHealth = primary.maxHealth;
+        players[socket.id].food = primary.food;
+        players[socket.id].nucleotides = primary.nucleotides;
+        players[socket.id].radius = primary.radius;
+        // Tadpole upgrades
+        players[socket.id].healthLevel = primary.healthLevel || 0;
+        players[socket.id].strengthLevel = primary.strengthLevel || 0;
+        players[socket.id].capacityLevel = primary.capacityLevel || 0;
+        players[socket.id].maxHealthBonus = primary.maxHealthBonus || 0;
+        players[socket.id].strengthBonus = primary.strengthBonus || 0;
+        // Cell upgrades
+        players[socket.id].cellHealthLevel = primary.cellHealthLevel || 0;
+        players[socket.id].cellStrengthLevel = primary.cellStrengthLevel || 0;
+        players[socket.id].cellCapacityLevel = primary.cellCapacityLevel || 0;
+        players[socket.id].cellSpeedLevel = primary.cellSpeedLevel || 0;
+        players[socket.id].cellSpeedBonus = primary.cellSpeedBonus || 0;
+        players[socket.id].cellStrengthBonus = primary.cellStrengthBonus || 0;
+        players[socket.id].cellMaxHealthBonus = primary.cellMaxHealthBonus || 0;
+        // Cell abilities
+        players[socket.id].hasProtector = primary.hasProtector || false;
+        players[socket.id].bubbleShieldActive = primary.bubbleShieldActive || false;
+        players[socket.id].hasSword = primary.hasSword || false;
+        players[socket.id].hasCellTail = primary.hasCellTail || false;
+        players[socket.id].canHibernate = primary.canHibernate || false;
+        players[socket.id].isFarming = primary.isFarming || false;
+      }
+    }
+  });
+
   // Handle player becoming active again (tab visible)
   socket.on('playerActive', () => {
     // If player was converted to NPC, re-add them to players
@@ -2101,7 +2314,8 @@ io.on('connection', (socket) => {
           type: existingNPC.type || 'tadpole',
           food: existingNPC.food || 0,
           angle: existingNPC.angle || 0,
-          wiggleOffset: existingNPC.wiggleOffset || Math.random() * Math.PI * 2
+          wiggleOffset: existingNPC.wiggleOffset || Math.random() * Math.PI * 2,
+          creatures: existingNPC.creatures || [] // Preserve creatures from NPC
         };
         // Remove from NPCs
         delete npcs[socket.id];
@@ -2119,7 +2333,8 @@ io.on('connection', (socket) => {
           lastMoveTime: Date.now(),
           isIdle: false,
           isInactive: false,
-          type: 'tadpole'
+          type: 'tadpole',
+          creatures: [] // Initialize creatures array
         };
       }
       // Notify all clients this player is active again
@@ -2323,13 +2538,42 @@ function convertAllPlayersToIdleNpcs() {
 
     npcs[playerId] = npc;
 
-    // Save position
+    // Save full state for persistence
     if (player.name) {
       userPositions[player.name] = {
         x: player.x,
         y: player.y,
         type: player.type || 'tadpole',
-        radius: player.radius || 8
+        radius: player.radius || 8,
+        // State
+        health: player.health,
+        maxHealth: player.maxHealth,
+        food: player.food,
+        nucleotides: player.nucleotides || 0,
+        // Tadpole upgrades
+        healthLevel: player.healthLevel || 0,
+        strengthLevel: player.strengthLevel || 0,
+        capacityLevel: player.capacityLevel || 0,
+        maxHealthBonus: player.maxHealthBonus || 0,
+        strengthBonus: player.strengthBonus || 0,
+        // Cell upgrades
+        cellHealthLevel: player.cellHealthLevel || 0,
+        cellStrengthLevel: player.cellStrengthLevel || 0,
+        cellCapacityLevel: player.cellCapacityLevel || 0,
+        cellSpeedLevel: player.cellSpeedLevel || 0,
+        cellSpeedBonus: player.cellSpeedBonus || 0,
+        cellStrengthBonus: player.cellStrengthBonus || 0,
+        cellMaxHealthBonus: player.cellMaxHealthBonus || 0,
+        // Cell abilities
+        hasProtector: player.hasProtector || false,
+        bubbleShieldActive: player.bubbleShieldActive || false,
+        shieldLastCharge: player.shieldLastCharge,
+        hasSword: player.hasSword || false,
+        hasCellTail: player.hasCellTail || false,
+        canHibernate: player.canHibernate || false,
+        isFarming: player.isFarming || false,
+        // Secondary creatures
+        creatures: player.creatures || []
       };
     }
 
@@ -2526,7 +2770,18 @@ function convertPlayerToNPC(playerId, player, reason) {
     console.log(`Created ${createdNpcs.length} idle NPCs for ${player.name}`);
   } else {
     // Fallback: create single NPC from player data
+    // Use actual player values when available, fall back to defaults only if missing
     const wasCell = player.type === 'cell';
+    const isBacteria = player.type === 'bacteria';
+    let defaultRadius = NPC_TADPOLE_RADIUS;
+    let defaultHealth = NPC_TADPOLE_HEALTH;
+    if (wasCell) {
+      defaultRadius = NPC_CELL_RADIUS;
+      defaultHealth = NPC_CELL_HEALTH;
+    } else if (isBacteria) {
+      defaultRadius = 18;
+      defaultHealth = 60;
+    }
     const npc = {
       id: playerId,
       x: player.x,
@@ -2534,14 +2789,14 @@ function convertPlayerToNPC(playerId, player, reason) {
       vx: 0,
       vy: 0,
       color: '#a0a0a0',
-      radius: wasCell ? NPC_CELL_RADIUS : NPC_TADPOLE_RADIUS,
+      radius: player.radius || defaultRadius,
       name: player.name || '',
       ownerName: player.name || '',
-      health: wasCell ? NPC_CELL_HEALTH : NPC_TADPOLE_HEALTH,
-      maxHealth: wasCell ? NPC_CELL_HEALTH : NPC_TADPOLE_HEALTH,
+      health: player.health || defaultHealth,
+      maxHealth: player.maxHealth || defaultHealth,
       lastHit: 0,
       lastAttack: 0,
-      type: wasCell ? 'cell' : 'tadpole',
+      type: player.type || 'tadpole',
       moveTarget: null,
       targetChangeTime: Date.now(),
       provoked: false,
@@ -2570,24 +2825,83 @@ function convertPlayerToNPC(playerId, player, reason) {
       cellSpeedLevel: player.cellSpeedLevel || 0,
       cellSpeedBonus: player.cellSpeedBonus || 0,
       cellStrengthBonus: player.cellStrengthBonus || 0,
+      cellMaxHealthBonus: player.cellMaxHealthBonus || 0,
       hasProtector: player.hasProtector || false,
       hasSword: player.hasSword || false,
       hasCellTail: player.hasCellTail || false,
       canHibernate: player.canHibernate || false,
-      bubbleShieldActive: player.bubbleShieldActive || false
+      bubbleShieldActive: player.bubbleShieldActive || false,
+      isFarming: player.isFarming || false
     };
 
     npcs[playerId] = npc;
     createdNpcs.push(npc);
   }
 
-  // Save first creature position for persistence
+  // Save full state for persistence
   if (createdNpcs.length > 0 && player.name && !player.name.startsWith('Player') && !userPositions[player.name]?.diedWhileInactive) {
+    const firstNpc = createdNpcs[0];
     userPositions[player.name] = {
-      x: createdNpcs[0].x,
-      y: createdNpcs[0].y,
-      type: createdNpcs[0].type || 'tadpole',
-      radius: createdNpcs[0].radius || 8
+      x: firstNpc.x,
+      y: firstNpc.y,
+      type: firstNpc.type || 'tadpole',
+      radius: firstNpc.radius || 8,
+      // State
+      health: firstNpc.health,
+      maxHealth: firstNpc.maxHealth,
+      food: firstNpc.food,
+      nucleotides: firstNpc.nucleotides || 0,
+      // Tadpole upgrades
+      healthLevel: firstNpc.healthLevel || 0,
+      strengthLevel: firstNpc.strengthLevel || 0,
+      capacityLevel: firstNpc.capacityLevel || 0,
+      maxHealthBonus: firstNpc.maxHealthBonus || 0,
+      strengthBonus: firstNpc.strengthBonus || 0,
+      // Cell upgrades
+      cellHealthLevel: firstNpc.cellHealthLevel || 0,
+      cellStrengthLevel: firstNpc.cellStrengthLevel || 0,
+      cellCapacityLevel: firstNpc.cellCapacityLevel || 0,
+      cellSpeedLevel: firstNpc.cellSpeedLevel || 0,
+      cellSpeedBonus: firstNpc.cellSpeedBonus || 0,
+      cellStrengthBonus: firstNpc.cellStrengthBonus || 0,
+      cellMaxHealthBonus: firstNpc.cellMaxHealthBonus || 0,
+      // Cell abilities
+      hasProtector: firstNpc.hasProtector || false,
+      bubbleShieldActive: firstNpc.bubbleShieldActive || false,
+      shieldLastCharge: player.shieldLastCharge,
+      hasSword: firstNpc.hasSword || false,
+      hasCellTail: firstNpc.hasCellTail || false,
+      canHibernate: firstNpc.canHibernate || false,
+      isFarming: firstNpc.isFarming || false,
+      // All creatures for this player
+      creatures: createdNpcs.map(npc => ({
+        x: npc.x,
+        y: npc.y,
+        type: npc.type,
+        radius: npc.radius,
+        health: npc.health,
+        maxHealth: npc.maxHealth,
+        food: npc.food,
+        nucleotides: npc.nucleotides || 0,
+        healthLevel: npc.healthLevel || 0,
+        strengthLevel: npc.strengthLevel || 0,
+        capacityLevel: npc.capacityLevel || 0,
+        maxHealthBonus: npc.maxHealthBonus || 0,
+        strengthBonus: npc.strengthBonus || 0,
+        cellHealthLevel: npc.cellHealthLevel || 0,
+        cellStrengthLevel: npc.cellStrengthLevel || 0,
+        cellCapacityLevel: npc.cellCapacityLevel || 0,
+        cellSpeedLevel: npc.cellSpeedLevel || 0,
+        cellSpeedBonus: npc.cellSpeedBonus || 0,
+        cellStrengthBonus: npc.cellStrengthBonus || 0,
+        cellMaxHealthBonus: npc.cellMaxHealthBonus || 0,
+        hasProtector: npc.hasProtector || false,
+        bubbleShieldActive: npc.bubbleShieldActive || false,
+        hasSword: npc.hasSword || false,
+        hasCellTail: npc.hasCellTail || false,
+        canHibernate: npc.canHibernate || false,
+        isFarming: npc.isFarming || false
+      }))
     };
   }
 

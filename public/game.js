@@ -464,6 +464,45 @@ setInterval(() => {
   }
 }, SAVE_INTERVAL);
 
+// Periodic sync of creature state to server (every 10 seconds)
+// This ensures server has recent state even if page closes abruptly
+setInterval(() => {
+  if (myTadpoles.length > 0 && socket && socket.connected) {
+    const creatures = myTadpoles.map(tad => ({
+      id: tad.id,
+      type: tad.type,
+      name: tad.name,
+      x: tad.x,
+      y: tad.y,
+      angle: tad.angle || 0,
+      health: tad.health,
+      maxHealth: tad.maxHealth || (tad.type === 'cell' ? CELL_MAX_HEALTH : MAX_HEALTH),
+      food: tad.food,
+      nucleotides: tad.nucleotides || 0,
+      radius: tad.radius,
+      healthLevel: tad.healthLevel || 0,
+      strengthLevel: tad.strengthLevel || 0,
+      capacityLevel: tad.capacityLevel || 0,
+      maxHealthBonus: tad.maxHealthBonus || 0,
+      strengthBonus: tad.strengthBonus || 0,
+      cellHealthLevel: tad.cellHealthLevel || 0,
+      cellStrengthLevel: tad.cellStrengthLevel || 0,
+      cellCapacityLevel: tad.cellCapacityLevel || 0,
+      cellSpeedLevel: tad.cellSpeedLevel || 0,
+      cellSpeedBonus: tad.cellSpeedBonus || 0,
+      cellStrengthBonus: tad.cellStrengthBonus || 0,
+      cellMaxHealthBonus: tad.cellMaxHealthBonus || 0,
+      hasProtector: tad.hasProtector || false,
+      bubbleShieldActive: tad.bubbleShieldActive || false,
+      hasSword: tad.hasSword || false,
+      hasCellTail: tad.hasCellTail || false,
+      canHibernate: tad.canHibernate || false,
+      isFarming: tad.isFarming || false
+    }));
+    socket.emit('syncCreatures', { creatures });
+  }
+}, 10000); // Every 10 seconds
+
 // Check session on page load
 checkSession();
 
@@ -957,9 +996,20 @@ creatureList.addEventListener('click', (e) => {
     }
 
     if (selectionChanged && !e.shiftKey) {
-      // Clear commands for newly selected creatures
+      // Clear commands for newly selected creatures (globals)
       moveTarget = null;
       attackTarget = null;
+      // Also clear per-creature targets for the newly selected creatures
+      // but don't clear targets for deselected creatures - they should continue their commands
+      myTadpoles.forEach(t => {
+        if (selectedTadpoles.has(t.id)) {
+          t.moveTarget = null;
+          t.attackTarget = null;
+          t.collectFoodAt = null;
+        }
+      });
+      // Hide hibernation menu when selecting a different creature
+      hideHibernationMenu();
     }
 
     updateSelectionCount();
@@ -1574,11 +1624,14 @@ socket.on('players', (serverPlayers) => {
       const player = serverPlayers[id];
       player.renderX = player.x;
       player.renderY = player.y;
-      player.health = MAX_HEALTH;
-      player.lastHit = 0;
+      // Preserve server values, only set defaults if not provided
+      player.health = player.health || MAX_HEALTH;
+      player.maxHealth = player.maxHealth || MAX_HEALTH;
+      player.lastHit = player.lastHit || 0;
       player.lastAttack = 0;
-      player.type = 'tadpole';
-      player.color = '#4a5a6a'; // Dark blue-grey for other players
+      player.type = player.type || 'tadpole';
+      player.color = player.color || '#4a5a6a'; // Dark blue-grey for other players
+      player.creatures = player.creatures || [];
       initializeTadpole(player);
       players[id] = player;
     }
@@ -1588,11 +1641,14 @@ socket.on('players', (serverPlayers) => {
 socket.on('playerJoined', (player) => {
   player.renderX = player.x;
   player.renderY = player.y;
-  player.health = MAX_HEALTH;
-  player.lastHit = 0;
+  // Preserve server values, only set defaults if not provided
+  player.health = player.health || MAX_HEALTH;
+  player.maxHealth = player.maxHealth || MAX_HEALTH;
+  player.lastHit = player.lastHit || 0;
   player.lastAttack = 0;
-  player.type = 'tadpole';
-  player.color = '#4a5a6a'; // Dark blue-grey for other players
+  player.type = player.type || 'tadpole';
+  player.color = player.color || '#4a5a6a'; // Dark blue-grey for other players
+  player.creatures = player.creatures || [];
   initializeTadpole(player);
   players[player.id] = player;
 });
@@ -1758,11 +1814,21 @@ socket.on('playerStateUpdate', (playerStates) => {
       p.name = state.name;
       p.color = state.color;
       p.score = state.score;
+      p.angle = state.angle;
       p.lastHit = state.lastHit;
       p.bubbleShieldActive = state.bubbleShieldActive;
       p.hasProtector = state.hasProtector;
       p.hasSword = state.hasSword;
+      p.hasCellTail = state.hasCellTail;
       p.creatures = state.creatures || [];
+      // Debug: log when we receive creatures for other players (rate-limited)
+      if (state.creatures && state.creatures.length > 1) {
+        if (!window._lastSyncInLog || !window._lastSyncInLog[playerId] || Date.now() - window._lastSyncInLog[playerId] > 5000) {
+          console.log(`[SYNC IN] Received ${state.creatures.length} creatures for player ${playerId}:`, state.creatures.map(c => `${c.type}@${Math.round(c.x)},${Math.round(c.y)}`).join(', '));
+          if (!window._lastSyncInLog) window._lastSyncInLog = {};
+          window._lastSyncInLog[playerId] = Date.now();
+        }
+      }
     } else {
       // New player we didn't know about - add them
       players[playerId] = {
@@ -2891,6 +2957,13 @@ canvas.addEventListener('click', (e) => {
     });
 
     if (creaturesCanMove.length > 0) {
+      // Set per-creature targets for selected creatures that can move
+      creaturesCanMove.forEach(t => {
+        t.moveTarget = { x: clickedFood.x, y: clickedFood.y, isFoodTarget: true, foodId: clickedFood.id };
+        t.attackTarget = null;
+        t.collectFoodAt = null; // Clear auto-collect
+      });
+      // Keep global for backwards compatibility (formations, etc)
       moveTarget = { x: clickedFood.x, y: clickedFood.y, isFoodTarget: true, foodId: clickedFood.id };
       attackTarget = null;
     } else {
@@ -2912,13 +2985,27 @@ canvas.addEventListener('click', (e) => {
     } else {
       selectedTadpoles.clear();
       selectedTadpoles.add(clickedEntity.id);
-      // Clear commands when changing selection
-      moveTarget = null;
-      attackTarget = null;
+      // Don't clear creature's existing command when selecting it
+      // Hide hibernation menu when selecting a different creature
+      hideHibernationMenu();
+    }
+    // Update globals to match newly selected creature's targets
+    const newlySelected = myTadpoles.find(t => t.id === clickedEntity.id);
+    if (newlySelected) {
+      moveTarget = newlySelected.moveTarget || null;
+      attackTarget = newlySelected.attackTarget || null;
     }
     updateSelectionCount();
   } else if (clickedEntity) {
-    // Attack target
+    // Attack target - set per-creature
+    const selectedCreatures = myTadpoles.filter(t => selectedTadpoles.has(t.id));
+    selectedCreatures.forEach(t => {
+      if (!t.supportMode) { // Only non-support creatures can attack independently
+        t.attackTarget = clickedEntity;
+        t.moveTarget = null;
+        t.collectFoodAt = null;
+      }
+    });
     attackTarget = clickedEntity;
     moveTarget = null;
   } else {
@@ -2935,7 +3022,13 @@ canvas.addEventListener('click', (e) => {
     });
 
     if (creaturesCanMove.length > 0) {
-      // At least one creature can move
+      // Set per-creature targets for selected creatures that can move
+      creaturesCanMove.forEach(t => {
+        t.moveTarget = { x: worldX, y: worldY };
+        t.attackTarget = null;
+        t.collectFoodAt = null; // Clear auto-collect
+      });
+      // Keep global for backwards compatibility
       moveTarget = { x: worldX, y: worldY };
       attackTarget = null;
     } else {
@@ -2970,16 +3063,24 @@ canvas.addEventListener('contextmenu', (e) => {
     const dy = worldY - tad.y;
     if (Math.sqrt(dx * dx + dy * dy) < tad.radius + 10) {
       // Toggle selection - add if not selected, remove if already selected
-      if (selectedTadpoles.has(tad.id)) {
+      const wasSelected = selectedTadpoles.has(tad.id);
+      if (wasSelected) {
         selectedTadpoles.delete(tad.id);
+        // Creature was deselected - let it continue its per-creature commands
       } else {
         selectedTadpoles.add(tad.id);
+        // Creature was added to selection - clear its per-creature targets
+        tad.moveTarget = null;
+        tad.attackTarget = null;
+        tad.collectFoodAt = null;
       }
       updateSelectionCount();
 
-      // Clear targets when selecting/deselecting to prevent velocity burst
+      // Clear global targets when selecting/deselecting to prevent velocity burst
       moveTarget = null;
       attackTarget = null;
+      // Hide hibernation menu when changing selection
+      hideHibernationMenu();
 
       // Show menu if any are selected
       if (selectedTadpoles.size > 0) {
@@ -3001,6 +3102,8 @@ canvas.addEventListener('contextmenu', (e) => {
   selectionMenu.classList.add('hidden');
   moveTarget = null;
   attackTarget = null;
+  // Hide hibernation menu when deselecting
+  hideHibernationMenu();
 });
 
 // Keyboard controls
@@ -3135,7 +3238,46 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
-// Save progress before page unload (use sendBeacon for reliability)
+// Send creatures to server via WebSocket immediately before page closes
+window.addEventListener('beforeunload', () => {
+  if (myTadpoles.length > 0 && socket && socket.connected) {
+    const creatures = myTadpoles.map(tad => ({
+      id: tad.id,
+      type: tad.type,
+      name: tad.name,
+      x: tad.x,
+      y: tad.y,
+      angle: tad.angle || 0,
+      health: tad.health,
+      maxHealth: tad.maxHealth || (tad.type === 'cell' ? CELL_MAX_HEALTH : MAX_HEALTH),
+      food: tad.food,
+      nucleotides: tad.nucleotides || 0,
+      radius: tad.radius,
+      healthLevel: tad.healthLevel || 0,
+      strengthLevel: tad.strengthLevel || 0,
+      capacityLevel: tad.capacityLevel || 0,
+      maxHealthBonus: tad.maxHealthBonus || 0,
+      strengthBonus: tad.strengthBonus || 0,
+      cellHealthLevel: tad.cellHealthLevel || 0,
+      cellStrengthLevel: tad.cellStrengthLevel || 0,
+      cellCapacityLevel: tad.cellCapacityLevel || 0,
+      cellSpeedLevel: tad.cellSpeedLevel || 0,
+      cellSpeedBonus: tad.cellSpeedBonus || 0,
+      cellStrengthBonus: tad.cellStrengthBonus || 0,
+      cellMaxHealthBonus: tad.cellMaxHealthBonus || 0,
+      hasProtector: tad.hasProtector || false,
+      bubbleShieldActive: tad.bubbleShieldActive || false,
+      hasSword: tad.hasSword || false,
+      hasCellTail: tad.hasCellTail || false,
+      canHibernate: tad.canHibernate || false,
+      isFarming: tad.isFarming || false
+    }));
+    // Try to send via WebSocket (may not complete before page unloads)
+    socket.emit('syncCreatures', { creatures });
+  }
+});
+
+// Also save progress via HTTP beacon for database persistence
 window.addEventListener('beforeunload', () => {
   if (!currentUser || myTadpoles.length === 0) return;
 
@@ -4549,11 +4691,68 @@ function update(deltaTime = 1) {
       }
     }
 
-    // Can move if selected OR in support mode (but not if hibernating)
-    if ((isSelected || tad.supportMode) && !tad.isHibernating) {
-      // Use support targets if in support mode, otherwise use normal targets
-      const currentAttackTarget = tad.supportMode ? supportAttackTarget : attackTarget;
-      let currentMoveTarget = tad.supportMode ? supportMoveTarget : moveTarget;
+    // Auto-collect food for non-support tadpoles (after a kill)
+    // Only if no explicit player command (moveTarget/attackTarget)
+    let autoCollectTarget = null;
+    if (!tad.supportMode && tad.collectFoodAt && !moveTarget && !attackTarget) {
+      const collectArea = tad.collectFoodAt;
+      const foodSearchRadius = 150;
+
+      // Clear collectFoodAt if it's been too long (10 seconds)
+      if (Date.now() - collectArea.time > 10000) {
+        tad.collectFoodAt = null;
+      } else {
+        // Find nearest food item within search area
+        let nearestFood = null;
+        let nearestDist = Infinity;
+
+        for (let foodItem of Object.values(food)) {
+          const dx = foodItem.x - collectArea.x;
+          const dy = foodItem.y - collectArea.y;
+          const distToDeathSpot = Math.sqrt(dx * dx + dy * dy);
+
+          if (distToDeathSpot < foodSearchRadius) {
+            const distToTad = Math.sqrt(
+              Math.pow(foodItem.x - tad.x, 2) + Math.pow(foodItem.y - tad.y, 2)
+            );
+            if (distToTad < nearestDist) {
+              nearestDist = distToTad;
+              nearestFood = foodItem;
+            }
+          }
+        }
+
+        if (nearestFood) {
+          autoCollectTarget = { x: nearestFood.x, y: nearestFood.y };
+        } else {
+          // No more food in area, stop collecting
+          tad.collectFoodAt = null;
+        }
+      }
+    }
+
+    // Clear auto-collect if player gives explicit command
+    if (tad.collectFoodAt && (moveTarget || attackTarget)) {
+      tad.collectFoodAt = null;
+    }
+
+    // Can move if has any target (per-creature or global) OR in support mode OR auto-collecting (but not if hibernating)
+    const hasPerCreatureTarget = tad.moveTarget || tad.attackTarget;
+    if ((isSelected || tad.supportMode || autoCollectTarget || hasPerCreatureTarget) && !tad.isHibernating) {
+      // Priority: per-creature targets > support targets > global targets > auto-collect
+      // This allows each creature to have independent commands
+      let currentAttackTarget;
+      let currentMoveTarget;
+
+      if (tad.supportMode) {
+        // Support mode uses support targets
+        currentAttackTarget = supportAttackTarget;
+        currentMoveTarget = supportMoveTarget;
+      } else {
+        // Non-support: use per-creature targets if set, otherwise globals
+        currentAttackTarget = tad.attackTarget || (isSelected ? attackTarget : null);
+        currentMoveTarget = tad.moveTarget || (isSelected ? moveTarget : null) || autoCollectTarget;
+      }
 
       // Formation logic for multi-selected creatures
       let formationOffset = { x: 0, y: 0 };
@@ -4638,9 +4837,9 @@ function update(deltaTime = 1) {
         const targetExists = targetIsNPC || targetIsPlayer || myTadpoles.includes(activeAttackTarget);
 
         if (targetIsDead || !targetExists) {
-          // Clear the attack target
+          // Clear the attack target (per-creature only - don't clear global since other creatures may use it)
           if (!tad.supportMode) {
-            attackTarget = null;
+            tad.attackTarget = null; // Clear per-creature target
           }
           // Skip attack logic for this frame
           activeAttackTarget = null;
@@ -4739,7 +4938,9 @@ function update(deltaTime = 1) {
                 const deathY = activeAttackTarget.y;
                 handleDeath(activeAttackTarget);
 
-                // Tell supporting creatures to collect food from this kill
+                // Auto-collect: tell the killer and supporting creatures to collect food
+                tad.collectFoodAt = { x: deathX, y: deathY, time: Date.now() };
+
                 myTadpoles.forEach(supportingTad => {
                   if (supportingTad.supportMode && supportingTad.supportLeader === tad.id) {
                     // Mark this creature to collect food from the death location
@@ -4855,18 +5056,22 @@ function update(deltaTime = 1) {
         if (keys['arrowleft'] || keys['a']) {
           dx = -1;
           moveTarget = null;
+          tad.moveTarget = null;
         }
         if (keys['arrowright'] || keys['d']) {
           dx = 1;
           moveTarget = null;
+          tad.moveTarget = null;
         }
         if (keys['arrowup'] || keys['w']) {
           dy = -1;
           moveTarget = null;
+          tad.moveTarget = null;
         }
         if (keys['arrowdown'] || keys['s']) {
           dy = 1;
           moveTarget = null;
+          tad.moveTarget = null;
         }
       }
     }
@@ -5497,13 +5702,14 @@ function update(deltaTime = 1) {
     if (!update.lastStateSync || Date.now() - update.lastStateSync > 200) {
       const primaryTad = myTadpoles[0];
       if (primaryTad) {
-        // Build creatures array for secondary creatures
-        const creatures = myTadpoles.slice(1).map(tad => ({
+        // Build creatures array for ALL creatures (so other players can see them all)
+        const creatures = myTadpoles.map(tad => ({
           id: tad.id,
           x: tad.x,
           y: tad.y,
           vx: tad.vx,
           vy: tad.vy,
+          angle: tad.angle || 0,
           health: tad.health,
           maxHealth: tad.maxHealth,
           food: tad.food,
@@ -5511,8 +5717,16 @@ function update(deltaTime = 1) {
           type: tad.type,
           radius: tad.radius,
           hasProtector: tad.hasProtector,
-          hasSword: tad.hasSword
+          hasSword: tad.hasSword,
+          hasCellTail: tad.hasCellTail,
+          bubbleShieldActive: tad.bubbleShieldActive
         }));
+
+        // Debug: log creatures being sent (rate-limited to every 5 seconds)
+        if (creatures.length > 1 && (!window._lastSyncOutLog || Date.now() - window._lastSyncOutLog > 5000)) {
+          console.log(`[SYNC OUT] Sending ${creatures.length} creatures:`, creatures.map(c => `${c.type}@${Math.round(c.x)},${Math.round(c.y)}`).join(', '));
+          window._lastSyncOutLog = Date.now();
+        }
 
         socket.emit('syncState', {
           health: primaryTad.health,
@@ -5984,9 +6198,39 @@ function render() {
     drawEntity(npc, false, true);
   });
 
-  // Draw other players
+  // Draw other players and their creatures
   Object.values(players).forEach(player => {
-    drawEntity(player, false, false);
+    // Debug: show creature count above player (temporary)
+    if (player.creatures && player.creatures.length > 1) {
+      const debugX = player.x;
+      const debugY = player.y - 50;
+      ctx.fillStyle = 'yellow';
+      ctx.font = '14px Arial';
+      ctx.fillText(`${player.creatures.length} creatures`, debugX - 30, debugY);
+    }
+    // If player has creatures array with data, draw from that (more accurate positions)
+    if (player.creatures && player.creatures.length > 0) {
+      player.creatures.forEach((creature, index) => {
+        // Create a renderable creature object with all needed properties
+        const renderCreature = {
+          ...creature,
+          renderX: creature.x,
+          renderY: creature.y,
+          color: player.color || '#4a5a6a',
+          name: index === 0 ? player.name : null, // Only show name on primary creature
+          // Ensure basic properties exist for rendering
+          radius: creature.radius || (creature.type === 'cell' ? 15 : (creature.type === 'bacteria' ? 6 : 8)),
+          health: creature.health || 100,
+          maxHealth: creature.maxHealth || creature.health || 100,
+          lastHit: 0,
+          lastAttack: 0
+        };
+        drawEntity(renderCreature, false, false);
+      });
+    } else {
+      // Fallback: draw main player entity if no creatures array
+      drawEntity(player, false, false);
+    }
   });
 
   // Draw own tadpoles
