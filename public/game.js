@@ -5752,6 +5752,12 @@ function update(deltaTime = 1) {
           console.log(`[SYNC OUT] Sending ${creatures.length} creatures:`, creatures.map(c => `${c.type}@${Math.round(c.x)},${Math.round(c.y)}`).join(', '));
           window._lastSyncOutLog = Date.now();
         }
+        // Debug: log cell angles being sent (rate-limited)
+        const cellCreatures = creatures.filter(c => c.type === 'cell');
+        if (cellCreatures.length > 0 && (!window._lastCellAngleSendLog || Date.now() - window._lastCellAngleSendLog > 2000)) {
+          console.log(`[CELL ANGLE SEND] Cells:`, cellCreatures.map(c => `angle=${c.angle.toFixed(3)}`).join(', '));
+          window._lastCellAngleSendLog = Date.now();
+        }
 
         socket.emit('syncState', {
           health: primaryTad.health,
@@ -6295,6 +6301,14 @@ function render() {
         while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
         while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
         cached.angle += angleDiff * angleFactor;
+
+        // Debug: Log cell angles (rate-limited)
+        if (creature.type === 'cell') {
+          if (!window._lastCellAngleLog || Date.now() - window._lastCellAngleLog > 2000) {
+            console.log(`[CELL ANGLE] Player ${player.name}: creature.angle=${(creature.angle || 0).toFixed(3)}, cached.angle=${cached.angle.toFixed(3)}, diff=${angleDiff.toFixed(3)}`);
+            window._lastCellAngleLog = Date.now();
+          }
+        }
 
         // Create a renderable creature object with all needed properties
         const renderCreature = {
