@@ -2642,7 +2642,7 @@ function initializeCellTail(entity) {
   }
 }
 
-function updateCellTail(entity, time) {
+function updateCellTail(entity, time, isRemote = false) {
   if (!entity.hasCellTail) return;
   if (!entity.cellTail || entity.cellTail.length === 0) {
     initializeCellTail(entity);
@@ -2654,15 +2654,18 @@ function updateCellTail(entity, time) {
   const vy = entity.vy || 0;
   const speed = Math.sqrt(vx * vx + vy * vy);
 
-  // Update cell's body angle based on movement direction (whole body rotates)
-  if (speed > 0.1) {
-    const targetAngle = Math.atan2(vy, vx);
-    // Smooth rotation towards movement direction
-    let angleDiff = targetAngle - entity.angle;
-    // Normalize to -PI to PI
-    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-    entity.angle += angleDiff * 0.06; // Slower, more gradual turn rate
+  // Only update angle for local entities - remote entities use synced angle
+  if (!isRemote) {
+    // Update cell's body angle based on movement direction (whole body rotates)
+    if (speed > 0.1) {
+      const targetAngle = Math.atan2(vy, vx);
+      // Smooth rotation towards movement direction
+      let angleDiff = targetAngle - entity.angle;
+      // Normalize to -PI to PI
+      while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+      while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+      entity.angle += angleDiff * 0.06; // Slower, more gradual turn rate
+    }
   }
 
   // Kick-off detection for natural thrust motion
@@ -2745,7 +2748,7 @@ function updateCellTail(entity, time) {
   }
 }
 
-function updateTail(entity, time) {
+function updateTail(entity, time, isRemote = false) {
   if (!entity.tail) initializeTadpole(entity);
 
   const x = entity.renderX || entity.x;
@@ -2754,12 +2757,15 @@ function updateTail(entity, time) {
   const vy = entity.vy || 0;
 
   const speed = Math.sqrt(vx * vx + vy * vy);
-  // Always update angle when moving, but preserve it when idle
-  if (speed > 0.1) {
-    entity.angle = Math.atan2(vy, vx);
-  } else if (entity.angle === undefined) {
-    // Initialize angle if not set (pointing left by default)
-    entity.angle = Math.PI;
+  // Only update angle for local entities - remote entities use synced angle
+  if (!isRemote) {
+    // Always update angle when moving, but preserve it when idle
+    if (speed > 0.1) {
+      entity.angle = Math.atan2(vy, vx);
+    } else if (entity.angle === undefined) {
+      // Initialize angle if not set (pointing left by default)
+      entity.angle = Math.PI;
+    }
   }
 
   // Kick-off detection - track acceleration
@@ -5812,7 +5818,12 @@ function interpolateVisuals() {
     player.renderX += (player.x - player.renderX) * interpFactor;
     player.renderY += (player.y - player.renderY) * interpFactor;
 
-    updateTail(player, time);
+    // Update tail based on player type
+    if (player.type === 'cell' && player.hasCellTail) {
+      updateCellTail(player, time, true); // true = isRemote, don't update angle
+    } else if (player.type === 'tadpole') {
+      updateTail(player, time, true); // true = isRemote, don't update angle
+    }
   });
 }
 
@@ -6258,7 +6269,8 @@ function render() {
             renderX: creature.x,
             renderY: creature.y,
             x: creature.x,
-            y: creature.y
+            y: creature.y,
+            angle: creature.angle || 0
           };
           player._creatureRenderCache[creatureId] = cached;
         }
@@ -6270,6 +6282,12 @@ function render() {
         cached.renderX += (cached.x - cached.renderX) * lerpFactor;
         cached.renderY += (cached.y - cached.renderY) * lerpFactor;
 
+        // Smooth angle interpolation (handle wrap-around)
+        let angleDiff = (creature.angle || 0) - cached.angle;
+        while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+        while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+        cached.angle += angleDiff * lerpFactor;
+
         // Create a renderable creature object with all needed properties
         const renderCreature = {
           ...creature,
@@ -6280,7 +6298,7 @@ function render() {
           color: player.color || '#4a5a6a',
           name: index === 0 ? player.name : null, // Only show name on primary creature
           // Ensure basic properties exist for rendering
-          angle: creature.angle || 0, // Explicitly preserve angle to prevent spinning
+          angle: cached.angle, // Use interpolated angle for smooth rotation
           radius: creature.radius || (creature.type === 'cell' ? 15 : (creature.type === 'bacteria' ? 6 : 8)),
           health: creature.health || 100,
           maxHealth: creature.maxHealth || creature.health || 100,
