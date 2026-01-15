@@ -5797,22 +5797,30 @@ function interpolateVisuals() {
   const interpFactor = 1 - Math.pow(1 - INTERPOLATION_FACTOR, renderDeltaTime / PHYSICS_TIMESTEP);
 
   // Interpolate other players' positions for smooth rendering
-  // Using original Rumpetroll approach: simple divide-by-N interpolation
+  // Frame-rate independent interpolation using exponential decay
+  // Formula: factor = 1 - (1 - baseSpeed)^(deltaTime * targetFPS / 1000)
+  const targetFPS = 60;
+  const positionSmoothing = 0.08; // Base smoothing per frame at 60fps
+  const renderSmoothing = 0.25;   // Faster for render position
+
+  // Calculate frame-rate independent lerp factors
+  const posFactor = 1 - Math.pow(1 - positionSmoothing, renderDeltaTime * targetFPS / 1000);
+  const renderFactor = 1 - Math.pow(1 - renderSmoothing, renderDeltaTime * targetFPS / 1000);
+
   Object.values(players).forEach(player => {
     // Get server target position
     const targetX = player.serverX !== undefined ? player.serverX : player.x;
     const targetY = player.serverY !== undefined ? player.serverY : player.y;
 
-    // Simple smooth interpolation towards server position (original Rumpetroll style)
-    // Divide remaining distance by 20 each frame for smooth movement
-    player.x += (targetX - player.x) / 12;
-    player.y += (targetY - player.y) / 12;
+    // Smooth interpolation towards server position (frame-rate independent)
+    player.x += (targetX - player.x) * posFactor;
+    player.y += (targetY - player.y) * posFactor;
 
     // Render position follows actual position closely
     if (!player.renderX) player.renderX = player.x;
     if (!player.renderY) player.renderY = player.y;
-    player.renderX += (player.x - player.renderX) / 4;
-    player.renderY += (player.y - player.renderY) / 4;
+    player.renderX += (player.x - player.renderX) * renderFactor;
+    player.renderY += (player.y - player.renderY) * renderFactor;
 
     // Update tail based on player type
     if (player.type === 'cell' && player.hasCellTail) {
@@ -6271,17 +6279,22 @@ function render() {
           player._creatureRenderCache[creatureId] = cached;
         }
 
-        // Simple smooth interpolation towards server position (original Rumpetroll style)
-        cached.x += (creature.x - cached.x) / 12;
-        cached.y += (creature.y - cached.y) / 12;
-        cached.renderX += (cached.x - cached.renderX) / 4;
-        cached.renderY += (cached.y - cached.renderY) / 4;
+        // Frame-rate independent smooth interpolation
+        const targetFPS = 60;
+        const posFactor = 1 - Math.pow(1 - 0.08, renderDeltaTime * targetFPS / 1000);
+        const renderFactor = 1 - Math.pow(1 - 0.25, renderDeltaTime * targetFPS / 1000);
+        const angleFactor = 1 - Math.pow(1 - 0.12, renderDeltaTime * targetFPS / 1000);
 
-        // Smooth angle interpolation (handle wrap-around)
+        cached.x += (creature.x - cached.x) * posFactor;
+        cached.y += (creature.y - cached.y) * posFactor;
+        cached.renderX += (cached.x - cached.renderX) * renderFactor;
+        cached.renderY += (cached.y - cached.renderY) * renderFactor;
+
+        // Smooth angle interpolation (handle wrap-around, frame-rate independent)
         let angleDiff = (creature.angle || 0) - cached.angle;
         while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
         while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-        cached.angle += angleDiff / 8;
+        cached.angle += angleDiff * angleFactor;
 
         // Create a renderable creature object with all needed properties
         const renderCreature = {
