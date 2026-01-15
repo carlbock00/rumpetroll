@@ -812,7 +812,7 @@ setInterval(() => {
     const playerStates = {};
     for (let playerId in players) {
       const p = players[playerId];
-      if (p.isInactive) continue;
+      if (p.isInactive || p.isDead) continue; // Skip inactive AND dead players
       playerStates[playerId] = {
         id: playerId,
         x: p.x,

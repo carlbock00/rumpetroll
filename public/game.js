@@ -2587,8 +2587,11 @@ socket.on('chat', (data) => {
 function initializeTadpole(entity) {
   entity.tail = [];
   entity.trail = [];
-  entity.angle = 0;
-  entity.wiggleOffset = Math.random() * Math.PI * 2;
+  // Only reset angle if not already set (preserve synced angle for other players)
+  if (entity.angle === undefined) {
+    entity.angle = 0;
+  }
+  entity.wiggleOffset = entity.wiggleOffset || Math.random() * Math.PI * 2;
 
   // Initialize tail segments properly spaced out behind the entity
   const segmentLength = TAIL_LENGTH / TAIL_SEGMENTS;
@@ -6219,6 +6222,7 @@ function render() {
           color: player.color || '#4a5a6a',
           name: index === 0 ? player.name : null, // Only show name on primary creature
           // Ensure basic properties exist for rendering
+          angle: creature.angle || 0, // Explicitly preserve angle to prevent spinning
           radius: creature.radius || (creature.type === 'cell' ? 15 : (creature.type === 'bacteria' ? 6 : 8)),
           health: creature.health || 100,
           maxHealth: creature.maxHealth || creature.health || 100,
