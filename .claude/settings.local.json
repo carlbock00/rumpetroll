@@ -18,7 +18,8 @@
       "Bash(npm install:*)",
       "Bash(curl:*)",
       "Bash(sqlite3:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }
