@@ -5773,13 +5773,6 @@ function update(deltaTime = 1) {
           console.log(`[SYNC OUT] Sending ${creatures.length} creatures:`, creatures.map(c => `${c.type}@${Math.round(c.x)},${Math.round(c.y)}`).join(', '));
           window._lastSyncOutLog = Date.now();
         }
-        // Debug: log cell angles being sent (rate-limited)
-        const cellCreatures = creatures.filter(c => c.type === 'cell');
-        if (cellCreatures.length > 0 && (!window._lastCellAngleSendLog || Date.now() - window._lastCellAngleSendLog > 2000)) {
-          console.log(`[CELL ANGLE SEND] Cells:`, cellCreatures.map(c => `angle=${c.angle.toFixed(3)}`).join(', '));
-          window._lastCellAngleSendLog = Date.now();
-        }
-
         socket.emit('syncState', {
           health: primaryTad.health,
           maxHealth: primaryTad.maxHealth,
@@ -6306,6 +6299,7 @@ function render() {
             wiggleOffset: Math.random() * Math.PI * 2,
             hairs: null, // Will be generated once in drawCell and cached here
             blobShape: null, // For bacteria
+            organelles: null, // For bacteria interior dots
             cellTail: null, // For cells with Motor Tail
             tail: null, // For tadpoles
             // Prevent upgrade-based regeneration checks from triggering
@@ -6332,14 +6326,6 @@ function render() {
         while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
         cached.angle += angleDiff * angleFactor;
 
-        // Debug: Log cell angles (rate-limited)
-        if (creature.type === 'cell') {
-          if (!window._lastCellAngleLog || Date.now() - window._lastCellAngleLog > 2000) {
-            console.log(`[CELL ANGLE] Player ${player.name}: creature.angle=${(creature.angle || 0).toFixed(3)}, cached.angle=${cached.angle.toFixed(3)}, diff=${angleDiff.toFixed(3)}`);
-            window._lastCellAngleLog = Date.now();
-          }
-        }
-
         // Create a renderable creature object with all needed properties
         const renderCreature = {
           ...creature,
@@ -6360,6 +6346,7 @@ function render() {
           wiggleOffset: cached.wiggleOffset,
           hairs: cached.hairs,
           blobShape: cached.blobShape,
+          organelles: cached.organelles,
           cellTail: cached.cellTail,
           tail: cached.tail,
           lastUpgradeLevel: cached.lastUpgradeLevel,
@@ -6375,6 +6362,9 @@ function render() {
         }
         if (renderCreature.blobShape && !cached.blobShape) {
           cached.blobShape = renderCreature.blobShape;
+        }
+        if (renderCreature.organelles && !cached.organelles) {
+          cached.organelles = renderCreature.organelles;
         }
         if (renderCreature.cellTail && !cached.cellTail) {
           cached.cellTail = renderCreature.cellTail;
