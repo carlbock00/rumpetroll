@@ -6307,7 +6307,10 @@ function render() {
             hairs: null, // Will be generated once in drawCell and cached here
             blobShape: null, // For bacteria
             cellTail: null, // For cells with Motor Tail
-            tail: null // For tadpoles
+            tail: null, // For tadpoles
+            // Prevent upgrade-based regeneration checks from triggering
+            lastUpgradeLevel: 0,
+            hairDensityBonus: 0
           };
           player._creatureRenderCache[creatureId] = cached;
         }
@@ -6358,13 +6361,17 @@ function render() {
           hairs: cached.hairs,
           blobShape: cached.blobShape,
           cellTail: cached.cellTail,
-          tail: cached.tail
+          tail: cached.tail,
+          lastUpgradeLevel: cached.lastUpgradeLevel,
+          hairDensityBonus: cached.hairDensityBonus
         };
         drawEntity(renderCreature, false, false);
 
         // Store any newly generated visual properties back to cache
         if (renderCreature.hairs && !cached.hairs) {
           cached.hairs = renderCreature.hairs;
+          cached.lastUpgradeLevel = renderCreature.lastUpgradeLevel || 0;
+          cached.hairDensityBonus = renderCreature.hairDensityBonus || 0;
         }
         if (renderCreature.blobShape && !cached.blobShape) {
           cached.blobShape = renderCreature.blobShape;
