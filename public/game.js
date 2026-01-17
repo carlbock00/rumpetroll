@@ -252,7 +252,7 @@ async function saveProgressToServer() {
         }
       })
     });
-    showSaveIndicator('Progress saved');
+    // Progress saved silently - continuous auto-save makes notification unnecessary
   } catch (error) {
     console.error('Save progress error:', error);
   }
@@ -349,18 +349,6 @@ function loadProgressFromServer(progress) {
   updateSelectionCount();
 }
 
-// Show save indicator
-function showSaveIndicator(message) {
-  let indicator = document.querySelector('.save-indicator');
-  if (!indicator) {
-    indicator = document.createElement('div');
-    indicator.className = 'save-indicator';
-    document.body.appendChild(indicator);
-  }
-  indicator.textContent = message;
-  indicator.classList.add('show');
-  setTimeout(() => indicator.classList.remove('show'), 2000);
-}
 
 // Flash a button to indicate an action can't be performed
 function flashButton(button) {
