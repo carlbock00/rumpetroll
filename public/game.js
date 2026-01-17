@@ -575,6 +575,14 @@ hibernationTadpole?.addEventListener('click', () => {
   selectedOffspringType = 'tadpole';
   hibernationTadpole.classList.add('selected');
   hibernationBacteria?.classList.remove('selected');
+
+  // Reset hibernation clock when reselecting
+  const selectedId = Array.from(selectedTadpoles)[0];
+  const selectedTad = myTadpoles.find(t => t.id === selectedId);
+  if (selectedTad && selectedTad.isHibernating) {
+    selectedTad.hibernationStartTime = Date.now();
+    console.log('Hibernation clock reset - Tadpole selected');
+  }
 });
 
 hibernationBacteria?.addEventListener('click', () => {
@@ -584,6 +592,14 @@ hibernationBacteria?.addEventListener('click', () => {
   selectedOffspringType = 'bacteria';
   hibernationBacteria.classList.add('selected');
   hibernationTadpole?.classList.remove('selected');
+
+  // Reset hibernation clock when reselecting
+  const selectedId = Array.from(selectedTadpoles)[0];
+  const selectedTad = myTadpoles.find(t => t.id === selectedId);
+  if (selectedTad && selectedTad.isHibernating) {
+    selectedTad.hibernationStartTime = Date.now();
+    console.log('Hibernation clock reset - Bacteria (Prokaryosis) selected');
+  }
 });
 
 hibernationCancelBtn?.addEventListener('click', () => {
