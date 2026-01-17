@@ -6306,6 +6306,7 @@ function render() {
             organelles: null, // For bacteria interior dots
             cellTail: null, // For cells with Motor Tail
             tail: null, // For tadpoles
+            trail: null, // Trail for tadpoles (needed by updateTail)
             // Prevent upgrade-based regeneration checks from triggering
             lastUpgradeLevel: 0,
             hairDensityBonus: 0
@@ -6367,6 +6368,7 @@ function render() {
           organelles: cached.organelles,
           cellTail: cached.cellTail,
           tail: cached.tail,
+          trail: cached.trail, // Trail for tadpoles (needed by updateTail)
           lastUpgradeLevel: cached.lastUpgradeLevel,
           hairDensityBonus: cached.hairDensityBonus
         };
@@ -6375,9 +6377,12 @@ function render() {
         // This makes tails move naturally instead of being frozen
         if (creature.type === 'tadpole') {
           updateTail(renderCreature, time, true); // true = isRemote, don't update angle
-          // Update cached tail with animated positions
+          // Update cached tail and trail with animated positions
           if (renderCreature.tail) {
             cached.tail = renderCreature.tail;
+          }
+          if (renderCreature.trail) {
+            cached.trail = renderCreature.trail;
           }
         } else if (creature.type === 'cell' && creature.hasCellTail) {
           updateCellTail(renderCreature, time, true); // true = isRemote, don't update angle
