@@ -222,6 +222,55 @@ function initializeNPCs() {
   console.log(`Initialized ${totalNPCs} NPCs (${npcCellCount} cells, ${totalNPCs - npcCellCount} tadpoles)`);
 }
 
+// Helper: Check if an entity at position (x,y) is protected by any bubble shield
+function isEntityProtectedByShield(entityX, entityY) {
+  // Check all players for active protector shields
+  for (let protectorId in players) {
+    const protector = players[protectorId];
+    if (!protector) continue;
+    if (protector.hasProtector && protector.bubbleShieldActive) {
+      let shieldX = protector.x;
+      let shieldY = protector.y;
+      let cellRadius = 40;
+
+      if (protector.type === 'cell') {
+        cellRadius = protector.radius || 40;
+      } else if (protector.creatures) {
+        const protectorCell = protector.creatures.find(c => c.type === 'cell' && c.hasProtector);
+        if (protectorCell && protectorCell.x !== undefined) {
+          shieldX = protectorCell.x;
+          shieldY = protectorCell.y;
+          cellRadius = protectorCell.radius || 40;
+        }
+      }
+
+      const shieldRadius = cellRadius * 12;
+      const dx = entityX - shieldX;
+      const dy = entityY - shieldY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < shieldRadius) {
+        return true;
+      }
+    }
+  }
+
+  // Also check idle NPCs with protector shields
+  for (let npcId in npcs) {
+    const npc = npcs[npcId];
+    if (npc.isIdlePlayer && npc.hasProtector && npc.bubbleShieldActive) {
+      const shieldRadius = (npc.radius || 20) * 12;
+      const dx = entityX - npc.x;
+      const dy = entityY - npc.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < shieldRadius) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 // Update single NPC behavior
 function updateNPC(npc) {
   const now = Date.now();
@@ -616,8 +665,8 @@ function updateNPC(npc) {
     const player = players[playerId];
     if (!player) continue;
 
-    // Skip collision/push if player has bubble shield active
-    if (player.bubbleShieldActive) continue;
+    // Skip collision/push if player is protected by any bubble shield
+    if (player.bubbleShieldActive || isEntityProtectedByShield(player.x, player.y)) continue;
 
     const dx = npc.x - player.x;
     const dy = npc.y - player.y;

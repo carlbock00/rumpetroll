@@ -5312,7 +5312,7 @@ function update(deltaTime = 1) {
       if (entity.type === 'cell' && entity.hasProtector && entity.bubbleShieldActive) {
         return true;
       }
-      // Second check: is this entity within another protector's shield radius?
+      // Second check: is this entity within own protector's shield radius?
       for (let protector of myTadpoles) {
         if (protector.type === 'cell' && protector.hasProtector && protector.bubbleShieldActive) {
           const shieldRadius = protector.radius * 12;
@@ -5321,6 +5321,35 @@ function update(deltaTime = 1) {
           const dist = Math.sqrt(dx * dx + dy * dy);
           if (dist < shieldRadius) {
             return true;
+          }
+        }
+      }
+      // Third check: is this entity within OTHER players' protector shield radius?
+      for (let playerId in players) {
+        const player = players[playerId];
+        if (!player) continue;
+        // Check if player has a protector with active shield
+        if (player.hasProtector && player.bubbleShieldActive) {
+          const shieldRadius = (player.radius || 40) * 12;
+          const dx = entity.x - player.x;
+          const dy = entity.y - player.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < shieldRadius) {
+            return true;
+          }
+        }
+        // Also check player's creatures for protectors
+        if (player.creatures) {
+          for (let creature of player.creatures) {
+            if (creature.type === 'cell' && creature.hasProtector && creature.bubbleShieldActive) {
+              const shieldRadius = (creature.radius || 40) * 12;
+              const dx = entity.x - creature.x;
+              const dy = entity.y - creature.y;
+              const dist = Math.sqrt(dx * dx + dy * dy);
+              if (dist < shieldRadius) {
+                return true;
+              }
+            }
           }
         }
       }
