@@ -2354,37 +2354,101 @@ io.on('connection', (socket) => {
   // This keeps server's player.creatures up-to-date for disconnect handling
   socket.on('syncCreatures', (data) => {
     if (players[socket.id] && data && data.creatures && data.creatures.length > 0) {
-      players[socket.id].creatures = data.creatures;
+      const player = players[socket.id];
+      player.creatures = data.creatures;
       // Also update primary player stats from first creature
       const primary = data.creatures[0];
       if (primary) {
-        players[socket.id].type = primary.type;
-        players[socket.id].health = primary.health;
-        players[socket.id].maxHealth = primary.maxHealth;
-        players[socket.id].food = primary.food;
-        players[socket.id].nucleotides = primary.nucleotides;
-        players[socket.id].radius = primary.radius;
+        player.type = primary.type;
+        player.health = primary.health;
+        player.maxHealth = primary.maxHealth;
+        player.food = primary.food;
+        player.nucleotides = primary.nucleotides;
+        player.radius = primary.radius;
+        player.x = primary.x;
+        player.y = primary.y;
         // Tadpole upgrades
-        players[socket.id].healthLevel = primary.healthLevel || 0;
-        players[socket.id].strengthLevel = primary.strengthLevel || 0;
-        players[socket.id].capacityLevel = primary.capacityLevel || 0;
-        players[socket.id].maxHealthBonus = primary.maxHealthBonus || 0;
-        players[socket.id].strengthBonus = primary.strengthBonus || 0;
+        player.healthLevel = primary.healthLevel || 0;
+        player.strengthLevel = primary.strengthLevel || 0;
+        player.capacityLevel = primary.capacityLevel || 0;
+        player.maxHealthBonus = primary.maxHealthBonus || 0;
+        player.strengthBonus = primary.strengthBonus || 0;
         // Cell upgrades
-        players[socket.id].cellHealthLevel = primary.cellHealthLevel || 0;
-        players[socket.id].cellStrengthLevel = primary.cellStrengthLevel || 0;
-        players[socket.id].cellCapacityLevel = primary.cellCapacityLevel || 0;
-        players[socket.id].cellSpeedLevel = primary.cellSpeedLevel || 0;
-        players[socket.id].cellSpeedBonus = primary.cellSpeedBonus || 0;
-        players[socket.id].cellStrengthBonus = primary.cellStrengthBonus || 0;
-        players[socket.id].cellMaxHealthBonus = primary.cellMaxHealthBonus || 0;
+        player.cellHealthLevel = primary.cellHealthLevel || 0;
+        player.cellStrengthLevel = primary.cellStrengthLevel || 0;
+        player.cellCapacityLevel = primary.cellCapacityLevel || 0;
+        player.cellSpeedLevel = primary.cellSpeedLevel || 0;
+        player.cellSpeedBonus = primary.cellSpeedBonus || 0;
+        player.cellStrengthBonus = primary.cellStrengthBonus || 0;
+        player.cellMaxHealthBonus = primary.cellMaxHealthBonus || 0;
         // Cell abilities
-        players[socket.id].hasProtector = primary.hasProtector || false;
-        players[socket.id].bubbleShieldActive = primary.bubbleShieldActive || false;
-        players[socket.id].hasSword = primary.hasSword || false;
-        players[socket.id].hasCellTail = primary.hasCellTail || false;
-        players[socket.id].canHibernate = primary.canHibernate || false;
-        players[socket.id].isFarming = primary.isFarming || false;
+        player.hasProtector = primary.hasProtector || false;
+        player.bubbleShieldActive = primary.bubbleShieldActive || false;
+        player.hasSword = primary.hasSword || false;
+        player.hasCellTail = primary.hasCellTail || false;
+        player.canHibernate = primary.canHibernate || false;
+        player.isFarming = primary.isFarming || false;
+      }
+
+      // CRITICAL: Also update userPositions immediately so data persists on disconnect
+      const playerName = player.name;
+      if (playerName && !playerName.startsWith('Player') && !userPositions[playerName]?.diedWhileInactive) {
+        userPositions[playerName] = {
+          x: primary.x,
+          y: primary.y,
+          type: player.type || 'tadpole',
+          radius: player.radius || 8,
+          health: player.health,
+          maxHealth: player.maxHealth,
+          food: player.food,
+          nucleotides: player.nucleotides || 0,
+          healthLevel: player.healthLevel || 0,
+          strengthLevel: player.strengthLevel || 0,
+          capacityLevel: player.capacityLevel || 0,
+          maxHealthBonus: player.maxHealthBonus || 0,
+          strengthBonus: player.strengthBonus || 0,
+          cellHealthLevel: player.cellHealthLevel || 0,
+          cellStrengthLevel: player.cellStrengthLevel || 0,
+          cellCapacityLevel: player.cellCapacityLevel || 0,
+          cellSpeedLevel: player.cellSpeedLevel || 0,
+          cellSpeedBonus: player.cellSpeedBonus || 0,
+          cellStrengthBonus: player.cellStrengthBonus || 0,
+          cellMaxHealthBonus: player.cellMaxHealthBonus || 0,
+          hasProtector: player.hasProtector || false,
+          bubbleShieldActive: player.bubbleShieldActive || false,
+          hasSword: player.hasSword || false,
+          hasCellTail: player.hasCellTail || false,
+          canHibernate: player.canHibernate || false,
+          isFarming: player.isFarming || false,
+          creatures: data.creatures.map(c => ({
+            x: c.x,
+            y: c.y,
+            type: c.type,
+            radius: c.radius,
+            health: c.health,
+            maxHealth: c.maxHealth,
+            food: c.food,
+            nucleotides: c.nucleotides || 0,
+            healthLevel: c.healthLevel || 0,
+            strengthLevel: c.strengthLevel || 0,
+            capacityLevel: c.capacityLevel || 0,
+            maxHealthBonus: c.maxHealthBonus || 0,
+            strengthBonus: c.strengthBonus || 0,
+            cellHealthLevel: c.cellHealthLevel || 0,
+            cellStrengthLevel: c.cellStrengthLevel || 0,
+            cellCapacityLevel: c.cellCapacityLevel || 0,
+            cellSpeedLevel: c.cellSpeedLevel || 0,
+            cellSpeedBonus: c.cellSpeedBonus || 0,
+            cellStrengthBonus: c.cellStrengthBonus || 0,
+            cellMaxHealthBonus: c.cellMaxHealthBonus || 0,
+            hasProtector: c.hasProtector || false,
+            bubbleShieldActive: c.bubbleShieldActive || false,
+            hasSword: c.hasSword || false,
+            hasCellTail: c.hasCellTail || false,
+            canHibernate: c.canHibernate || false,
+            isFarming: c.isFarming || false
+          }))
+        };
       }
     }
   });

@@ -452,9 +452,8 @@ setInterval(() => {
   }
 }, SAVE_INTERVAL);
 
-// Periodic sync of creature state to server (every 10 seconds)
-// This ensures server has recent state even if page closes abruptly
-setInterval(() => {
+// Sync creatures to server - call this immediately when creatures change
+function syncCreaturesToServer() {
   if (myTadpoles.length > 0 && socket && socket.connected) {
     const creatures = myTadpoles.map(tad => ({
       id: tad.id,
@@ -489,7 +488,11 @@ setInterval(() => {
     }));
     socket.emit('syncCreatures', { creatures });
   }
-}, 3000); // Every 3 seconds (more frequent to prevent data loss on disconnect)
+}
+
+// Periodic sync of creature state to server
+// This ensures server has recent state even if page closes abruptly
+setInterval(syncCreaturesToServer, 3000);
 
 // Check session on page load
 checkSession();
@@ -2493,6 +2496,7 @@ chatInput.addEventListener('keydown', (e) => {
           };
           initializeTadpole(newTad);
           myTadpoles.push(newTad);
+          syncCreaturesToServer(); // Immediately sync new creature
 
           chatInput.value = '';
           console.log('New tadpole spawned via /split cheat');
@@ -3776,6 +3780,7 @@ function handleEvolutionAction(actionId) {
       // Add to player's creatures
       myTadpoles.push(newCell);
       selectedTadpoles.add(newCell.id);
+      syncCreaturesToServer(); // Immediately sync new creature
 
       updateSelectionCount();
     }, 600); // 600ms split animation
@@ -5555,6 +5560,7 @@ function update(deltaTime = 1) {
         }
 
         myTadpoles.push(newCreature);
+        syncCreaturesToServer(); // Immediately sync new creature
 
         // Cell recoil in opposite direction
         tad.vx = -Math.cos(popAngle) * 3;
@@ -5933,6 +5939,11 @@ function handleDeath(entity) {
 
     // Notify server that player died (clears saved position, resets NPC targeting)
     socket.emit('playerDied', { x: entity.x, y: entity.y });
+
+    // Sync remaining creatures (if any) immediately after death
+    if (myTadpoles.length > 0) {
+      syncCreaturesToServer();
+    }
 
     if (myTadpoles.length === 0) {
       isDead = true;
