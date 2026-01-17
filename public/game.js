@@ -5953,6 +5953,9 @@ function handleDeath(entity) {
       syncCreaturesToServer();
     }
 
+    // Update UI (hides creature list when down to 1 creature)
+    updateSelectionCount();
+
     if (myTadpoles.length === 0) {
       isDead = true;
       deathScreen.classList.remove('hidden');
