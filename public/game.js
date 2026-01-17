@@ -1166,7 +1166,7 @@ const NPC_CELL_RADIUS = 40; // NPC cells are bigger than player cells
 const BACTERIA_RADIUS = 18; // Bacteria are medium-sized
 const BACTERIA_MAX_HEALTH = 60; // Bacteria are weaker
 const BACTERIA_FOOD_CAPACITY = 30; // Medium capacity
-const BACTERIA_FARM_RATE = 0.002; // Food per frame when farming (~0.12 food/sec at 60fps)
+const BACTERIA_FARM_RATE = 0.0005; // Food per frame when farming (~0.03 food/sec at 60fps, ~1 food every 33 sec)
 // Combat stats - NPCs have advantage until player upgrades
 const MAX_HEALTH = 70; // Player base health (weak at start)
 const CELL_MAX_HEALTH = 120; // Player cell base health
