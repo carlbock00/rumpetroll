@@ -5461,16 +5461,16 @@ function update(deltaTime = 1) {
         let newCreature;
 
         if (offspringType === 'bacteria') {
-          // Spawn a bacteria (Prokaryosis)
-          const spawnDistance = tad.radius + BACTERIA_RADIUS;
+          // Spawn a bacteria (Prokaryosis) - starts INSIDE the cell, emerges with special animation
           newCreature = {
             id: `bacteria_${myId}_${Date.now()}`,
-            x: tad.x + Math.cos(popAngle) * spawnDistance,
-            y: tad.y + Math.sin(popAngle) * spawnDistance,
-            vx: Math.cos(popAngle) * popSpeed,
-            vy: Math.sin(popAngle) * popSpeed,
-            renderX: tad.x + Math.cos(popAngle) * spawnDistance,
-            renderY: tad.y + Math.sin(popAngle) * spawnDistance,
+            // Start at the center of the parent cell
+            x: tad.x,
+            y: tad.y,
+            vx: 0, // No velocity during emergence
+            vy: 0,
+            renderX: tad.x,
+            renderY: tad.y,
             color: '#7fbf7f',
             radius: BACTERIA_RADIUS,
             name: tad.name,
@@ -5480,14 +5480,20 @@ function update(deltaTime = 1) {
             lastAttack: 0,
             type: 'bacteria',
             food: 0,
-            birthTime: Date.now(),
-            birthDuration: 800,
+            // Special prokaryosis animation properties
+            prokaryosisTime: Date.now(),
+            prokaryosisDuration: 1200, // Longer emergence animation
+            prokaryosisParentId: tad.id, // Track parent cell
+            prokaryosisAngle: popAngle, // Direction to emerge
+            prokaryosisParentRadius: tad.radius, // Parent's radius for positioning
+            prokaryosisParentX: tad.x, // Parent cell center X
+            prokaryosisParentY: tad.y, // Parent cell center Y
             blobShape: generateBlobShape(),
             angle: popAngle,
             wiggleOffset: Math.random() * Math.PI * 2,
             isFarming: false
           };
-          console.log('Hibernation complete! New bacteria spawned (Prokaryosis).');
+          console.log('Hibernation complete! Prokaryosis started - bacteria emerging from cell.');
         } else {
           // Spawn a tadpole (default)
           const spawnDistance = tad.radius + TADPOLE_RADIUS;
@@ -6705,6 +6711,109 @@ function drawTadpole(entity, isMe, isNPC, isSelected) {
     ctx.translate(-x, -y);
   }
 
+  // Prokaryosis animation - bacteria emerges from inside the cell
+  let prokaryosisScale = 1;
+  let prokaryosisGlow = 0;
+  let prokaryosisActive = false;
+  if (entity.prokaryosisTime && entity.prokaryosisDuration) {
+    const timeSinceProkaryosis = Date.now() - entity.prokaryosisTime;
+    if (timeSinceProkaryosis < entity.prokaryosisDuration) {
+      prokaryosisActive = true;
+      const progress = timeSinceProkaryosis / entity.prokaryosisDuration;
+
+      // Phase 1 (0-0.5): Grow inside the cell
+      // Phase 2 (0.5-0.8): Move outward through cell membrane
+      // Phase 3 (0.8-1.0): Pop out and settle
+      const parentX = entity.prokaryosisParentX;
+      const parentY = entity.prokaryosisParentY;
+      const angle = entity.prokaryosisAngle;
+      const parentRadius = entity.prokaryosisParentRadius;
+
+      if (progress < 0.5) {
+        // Growing phase - bacteria starts tiny and grows inside the cell
+        const growProgress = progress / 0.5;
+        prokaryosisScale = 0.2 + growProgress * 0.8; // 0.2 to 1.0
+
+        // Stay at parent cell center during growth
+        entity.x = parentX;
+        entity.y = parentY;
+        entity.renderX = parentX;
+        entity.renderY = parentY;
+        x = parentX;
+        y = parentY;
+      } else if (progress < 0.8) {
+        // Emergence phase - bacteria moves outward through cell membrane
+        prokaryosisScale = 1.0;
+        const emergeProgress = (progress - 0.5) / 0.3;
+
+        // Move from center to just outside the parent cell
+        const emergeDist = emergeProgress * (parentRadius + entity.radius + 5);
+        entity.x = parentX + Math.cos(angle) * emergeDist;
+        entity.y = parentY + Math.sin(angle) * emergeDist;
+        entity.renderX = entity.x;
+        entity.renderY = entity.y;
+        x = entity.renderX;
+        y = entity.renderY;
+      } else {
+        // Pop-out phase - overshoot and settle
+        const popProgress = (progress - 0.8) / 0.2;
+        const overshoot = Math.sin(popProgress * Math.PI) * 0.3;
+        prokaryosisScale = 1.0 + overshoot;
+
+        // Final position outside parent cell with elastic bounce
+        const finalDist = parentRadius + entity.radius + 5;
+        const bounceOffset = overshoot * entity.radius * 0.5;
+        entity.x = parentX + Math.cos(angle) * (finalDist + bounceOffset);
+        entity.y = parentY + Math.sin(angle) * (finalDist + bounceOffset);
+        entity.renderX = entity.x;
+        entity.renderY = entity.y;
+        x = entity.renderX;
+        y = entity.renderY;
+      }
+
+      // Green glow for prokaryosis (distinct from blue birth glow)
+      prokaryosisGlow = Math.pow(1 - progress, 1.5) * 0.8;
+    } else {
+      // Prokaryosis animation complete - give bacteria velocity and clean up
+      const angle = entity.prokaryosisAngle;
+      entity.vx = Math.cos(angle) * 2;
+      entity.vy = Math.sin(angle) * 2;
+      entity.prokaryosisTime = null;
+      entity.prokaryosisDuration = null;
+      entity.prokaryosisParentId = null;
+    }
+  }
+
+  // Apply prokaryosis effects if active
+  if (prokaryosisActive) {
+    ctx.save();
+    ctx.translate(x, y);
+
+    // Draw prokaryosis glow - green-tinted emergence effect
+    if (prokaryosisGlow > 0) {
+      // Membrane stretching effect
+      const stretchRadius = entity.radius * (1.5 + prokaryosisGlow);
+      ctx.strokeStyle = `rgba(100, 200, 100, ${prokaryosisGlow * 0.6})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, stretchRadius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Inner green glow
+      const glowGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, entity.radius * 2);
+      glowGradient.addColorStop(0, `rgba(150, 255, 150, ${prokaryosisGlow * 0.5})`);
+      glowGradient.addColorStop(0.5, `rgba(100, 200, 100, ${prokaryosisGlow * 0.3})`);
+      glowGradient.addColorStop(1, 'rgba(100, 200, 100, 0)');
+      ctx.fillStyle = glowGradient;
+      ctx.beginPath();
+      ctx.arc(0, 0, entity.radius * 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.scale(prokaryosisScale, prokaryosisScale);
+    ctx.translate(-x, -y);
+  }
+
   // Transformation animation (tadpole to cell) - morphing effect
   let transformProgress = 0;
   let transformGlow = 0;
@@ -7767,14 +7876,15 @@ function drawBacteria(entity, isMe, isSelected) {
   const wobbleAmount = 0.03;
   const wobble = Math.sin(time * wobbleSpeed + (entity.wiggleOffset || 0)) * wobbleAmount;
 
-  // Check if this is an idle NPC (grey coloring)
+  // Check if this is an idle NPC or another player's creature (grey coloring)
   const isIdleNPC = entity.isIdlePlayer || false;
+  const shouldBeGrey = isIdleNPC || !isMe; // Grey for idle NPCs AND other players' bacteria
 
   // Subtle color pulsing for "alive" look
   const colorPulse = Math.sin(time * 2) * 10;
   let baseGreen, baseColor;
-  if (isIdleNPC) {
-    // Grey coloring for idle NPCs
+  if (shouldBeGrey) {
+    // Grey coloring for idle NPCs and other players' bacteria
     const greyBase = 140 + colorPulse * 0.3;
     baseGreen = greyBase;
     baseColor = `rgb(${Math.floor(greyBase)}, ${Math.floor(greyBase)}, ${Math.floor(greyBase)})`; // Grey
@@ -7826,8 +7936,8 @@ function drawBacteria(entity, isMe, isSelected) {
     -entity.radius * 0.2, -entity.radius * 0.2, 0,
     0, 0, entity.radius * 1.2
   );
-  if (isIdleNPC) {
-    // Grey gradient for idle NPCs
+  if (shouldBeGrey) {
+    // Grey gradient for idle NPCs and other players' bacteria
     const lightGrey = Math.floor(baseGreen + 20);
     const darkGrey = Math.floor(baseGreen - 30);
     gradient.addColorStop(0, `rgba(${lightGrey}, ${lightGrey}, ${lightGrey}, 1)`);
@@ -7843,7 +7953,7 @@ function drawBacteria(entity, isMe, isSelected) {
   ctx.fill();
 
   // Subtle inner membrane effect
-  if (isIdleNPC) {
+  if (shouldBeGrey) {
     const strokeGrey = Math.floor(baseGreen - 50);
     ctx.strokeStyle = `rgba(${strokeGrey}, ${strokeGrey}, ${strokeGrey}, 0.5)`;
   } else {
@@ -7864,7 +7974,7 @@ function drawBacteria(entity, isMe, isSelected) {
       });
     }
   }
-  if (isIdleNPC) {
+  if (shouldBeGrey) {
     const orgGrey = Math.floor(baseGreen - 20);
     ctx.fillStyle = `rgba(${orgGrey}, ${orgGrey}, ${orgGrey}, 0.4)`;
   } else {
