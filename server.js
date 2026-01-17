@@ -2284,6 +2284,13 @@ io.on('connection', (socket) => {
   // Handle player becoming inactive (tab hidden)
   socket.on('playerInactive', (data) => {
     if (players[socket.id]) {
+      // Check if user has other active windows - if so, don't mark as inactive
+      const username = players[socket.id].name;
+      if (username && userSockets[username] && userSockets[username].size > 1) {
+        console.log(`Player ${socket.id} tab hidden but user ${username} has ${userSockets[username].size} windows - staying active`);
+        return; // Don't mark as inactive - other windows are active
+      }
+
       players[socket.id].isInactive = true;
       players[socket.id].inactiveTime = Date.now();
       // Store all creatures for idle NPC conversion
@@ -2540,8 +2547,32 @@ io.on('connection', (socket) => {
       // Don't emit playerLeft - the idle NPC should persist
       delete players[socket.id];
     } else if (players[socket.id]) {
-      // PRIMARY socket disconnecting - convert to idle NPC
+      // PRIMARY socket disconnecting
       const player = players[socket.id];
+
+      // Check if user has other windows still open
+      if (username && userSockets[username] && userSockets[username].size > 0) {
+        // Transfer player ownership to a remaining socket
+        const remainingSockets = Array.from(userSockets[username]);
+        const newPrimarySocketId = remainingSockets[0];
+        console.log(`Primary socket ${socket.id} disconnected, transferring player to ${newPrimarySocketId}`);
+
+        // Update the player's ID to the new socket ID
+        players[newPrimarySocketId] = player;
+        players[newPrimarySocketId].id = newPrimarySocketId;
+        delete players[socket.id];
+
+        // Notify all remaining sockets about the new primary
+        remainingSockets.forEach(sockId => {
+          const sock = io.sockets.sockets.get(sockId);
+          if (sock) {
+            sock.emit('primaryChanged', { newPrimaryId: newPrimarySocketId });
+          }
+        });
+        return;
+      }
+
+      // No other windows - convert to idle NPC
       // Only convert if they have a real username (not anonymous) AND they're not dead
       if (player.name && !player.name.startsWith('Player') && !player.isDead) {
         console.log(`Converting disconnecting player ${socket.id} (${player.name}) to idle NPC`);

@@ -6294,6 +6294,10 @@ function render() {
             renderY: creature.y,
             x: creature.x,
             y: creature.y,
+            prevX: creature.x, // For velocity estimation
+            prevY: creature.y,
+            vx: 0, // Estimated velocity
+            vy: 0,
             angle: creature.angle || 0,
             // Cache visual properties so they don't regenerate every frame
             wiggleOffset: Math.random() * Math.PI * 2,
@@ -6315,10 +6319,22 @@ function render() {
         const renderFactor = 1 - Math.pow(1 - 0.25, renderDeltaTime * targetFPS / 1000);
         const angleFactor = 1 - Math.pow(1 - 0.12, renderDeltaTime * targetFPS / 1000);
 
+        // Store previous position before updating
+        const prevX = cached.x;
+        const prevY = cached.y;
+
         cached.x += (creature.x - cached.x) * posFactor;
         cached.y += (creature.y - cached.y) * posFactor;
         cached.renderX += (cached.x - cached.renderX) * renderFactor;
         cached.renderY += (cached.y - cached.renderY) * renderFactor;
+
+        // Estimate velocity from position change (for tail animation)
+        // Use smooth interpolation to avoid jerky velocity changes
+        const velFactor = 0.3;
+        const newVx = (cached.x - prevX) * (1000 / Math.max(renderDeltaTime, 1));
+        const newVy = (cached.y - prevY) * (1000 / Math.max(renderDeltaTime, 1));
+        cached.vx += (newVx - cached.vx) * velFactor;
+        cached.vy += (newVy - cached.vy) * velFactor;
 
         // Smooth angle interpolation (handle wrap-around, frame-rate independent)
         let angleDiff = (creature.angle || 0) - cached.angle;
@@ -6333,6 +6349,8 @@ function render() {
           y: cached.y,
           renderX: cached.renderX,
           renderY: cached.renderY,
+          vx: cached.vx, // Estimated velocity for tail animation
+          vy: cached.vy,
           color: player.color || '#4a5a6a',
           name: index === 0 ? player.name : null, // Only show name on primary creature
           // Ensure basic properties exist for rendering
@@ -6352,6 +6370,23 @@ function render() {
           lastUpgradeLevel: cached.lastUpgradeLevel,
           hairDensityBonus: cached.hairDensityBonus
         };
+
+        // Update tail animation EVERY FRAME for remote creatures
+        // This makes tails move naturally instead of being frozen
+        if (creature.type === 'tadpole') {
+          updateTail(renderCreature, time, true); // true = isRemote, don't update angle
+          // Update cached tail with animated positions
+          if (renderCreature.tail) {
+            cached.tail = renderCreature.tail;
+          }
+        } else if (creature.type === 'cell' && creature.hasCellTail) {
+          updateCellTail(renderCreature, time, true); // true = isRemote, don't update angle
+          // Update cached cellTail with animated positions
+          if (renderCreature.cellTail) {
+            cached.cellTail = renderCreature.cellTail;
+          }
+        }
+
         drawEntity(renderCreature, false, false);
 
         // Store any newly generated visual properties back to cache
