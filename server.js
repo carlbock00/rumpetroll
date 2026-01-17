@@ -618,7 +618,7 @@ function updateNPC(npc) {
       if (dist < ATTACK_RANGE && now - npc.lastAttack > NPC_ATTACK_COOLDOWN) {
         const npcDamage = ATTACK_DAMAGE * (npc.type === 'cell' ? 1.5 : 1);
         const actualDamage = npcDamage * (target.type === 'cell' ? CELL_DAMAGE_RESISTANCE : 1);
-        target.health -= actualDamage;
+        target.health = Math.max(0, target.health - actualDamage);
         target.lastHit = now;
         npc.lastAttack = now;
         npc.attackLungeTime = now;
@@ -2158,7 +2158,7 @@ io.on('connection', (socket) => {
         }
 
         const damage = data.damage || ATTACK_DAMAGE;
-        npc.health -= damage;
+        npc.health = Math.max(0, npc.health - damage);
         npc.lastHit = Date.now();
 
         // Don't provoke idle creatures that are within any shield radius
@@ -2244,7 +2244,7 @@ io.on('connection', (socket) => {
     }
 
     // Apply damage on server
-    targetPlayer.health -= damage;
+    targetPlayer.health = Math.max(0, targetPlayer.health - damage);
     targetPlayer.lastHit = Date.now();
 
     console.log(`PvP attack: ${socket.id} -> ${data.targetId}, damage: ${damage}, health: ${targetPlayer.health}/${targetPlayer.maxHealth}`);
