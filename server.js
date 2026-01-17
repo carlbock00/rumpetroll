@@ -2888,7 +2888,15 @@ function convertPlayerToNPC(playerId, player, reason) {
   }
 
   // Check if player has multiple creatures
-  const creatures = player.creatures || [];
+  // Fallback: if player.creatures is empty/small but userPositions has more creatures, use those
+  let creatures = player.creatures || [];
+  if (player.name && userPositions[player.name]?.creatures) {
+    const savedCreatures = userPositions[player.name].creatures;
+    if (savedCreatures.length > creatures.length) {
+      console.log(`Using ${savedCreatures.length} creatures from userPositions (player had ${creatures.length})`);
+      creatures = savedCreatures;
+    }
+  }
   const createdNpcs = [];
 
   if (creatures.length > 0) {

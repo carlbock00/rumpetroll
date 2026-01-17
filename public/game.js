@@ -489,7 +489,7 @@ setInterval(() => {
     }));
     socket.emit('syncCreatures', { creatures });
   }
-}, 10000); // Every 10 seconds
+}, 3000); // Every 3 seconds (more frequent to prevent data loss on disconnect)
 
 // Check session on page load
 checkSession();
