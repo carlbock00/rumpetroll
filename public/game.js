@@ -1959,7 +1959,11 @@ socket.on('npcs', (serverNpcs) => {
     if (npc.type === 'cell') {
       npc.angle = 0;
       npc.wiggleOffset = Math.random() * Math.PI * 2;
-    } else {
+      // Initialize cell tail if this cell has Motor Tail upgrade
+      if (npc.hasCellTail) {
+        initializeCellTail(npc);
+      }
+    } else if (npc.type === 'tadpole') {
       initializeTadpole(npc);
     }
     npcs[npc.id] = npc;
@@ -2038,7 +2042,11 @@ socket.on('npcUpdate', (serverNpcs) => {
       if (npc.type === 'cell') {
         npc.angle = 0;
         npc.wiggleOffset = Math.random() * Math.PI * 2;
-      } else {
+        // Initialize cell tail if this cell has Motor Tail upgrade
+        if (npc.hasCellTail) {
+          initializeCellTail(npc);
+        }
+      } else if (npc.type === 'tadpole') {
         initializeTadpole(npc);
       }
       npcs[npc.id] = npc;
@@ -6329,6 +6337,10 @@ function render() {
 
   // Draw NPCs
   Object.values(npcs).forEach(npc => {
+    // Update cell tail for NPCs that have Motor Tail upgrade
+    if (npc.type === 'cell' && npc.hasCellTail) {
+      updateCellTail(npc, time, true);
+    }
     drawEntity(npc, false, true);
   });
 
