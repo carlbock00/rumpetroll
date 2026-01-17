@@ -722,9 +722,15 @@ body {
   width: 125px; /* 110px node width + 15px gap */
 }
 
-/* Defense branch sub-branches need wider connector due to storage branch being wider */
-#cellTechTree .defense-branch > .sub-branches > .sub-branch-lines {
-  width: 140px; /* Adjusted for ER + Storage branch spacing */
+/* Branch labels */
+.branch-label {
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: bold;
+  color: rgba(200, 220, 255, 0.8);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
 /* Connector from parent node down to the horizontal split */
@@ -1150,67 +1156,79 @@ body {
   background: rgba(100, 150, 220, 0.5);
 }
 
-/* Defense branch - blue accent (matches cell-tech default but brighter) */
-.defense-branch .tech-node:not(.locked):not(.fog) .tech-node-inner {
+/* Health branch - blue accent (protection/shield theme) */
+.health-branch .tech-node:not(.locked):not(.fog) .tech-node-inner {
   background: linear-gradient(135deg, rgba(45, 70, 110, 0.9) 0%, rgba(30, 50, 85, 0.9) 100%);
   border-color: rgba(100, 150, 220, 0.7);
 }
 
-.defense-branch .tech-node:not(.locked):not(.fog):hover .tech-node-inner {
+.health-branch .tech-node:not(.locked):not(.fog):hover .tech-node-inner {
   background: linear-gradient(135deg, rgba(55, 85, 130, 0.95) 0%, rgba(40, 65, 105, 0.95) 100%);
   border-color: rgba(130, 180, 255, 0.9);
   box-shadow: 0 0 15px rgba(100, 150, 220, 0.4);
 }
 
-.defense-branch .tech-node:not(.locked):not(.fog) .tech-effect {
+.health-branch .tech-node:not(.locked):not(.fog) .tech-effect {
   color: rgba(150, 200, 255, 0.9);
 }
 
-.defense-branch .tech-node.researched .tech-node-inner {
+.health-branch .tech-node.researched .tech-node-inner {
   background: linear-gradient(135deg, rgba(60, 100, 150, 0.95) 0%, rgba(45, 80, 125, 0.95) 100%);
   border-color: rgba(150, 200, 255, 0.8);
 }
 
-/* Speed branch - cyan accent */
-.speed-branch .tech-node:not(.locked):not(.fog) .tech-node-inner {
-  background: linear-gradient(135deg, rgba(40, 80, 90, 0.9) 0%, rgba(25, 55, 65, 0.9) 100%);
-  border-color: rgba(100, 200, 200, 0.6);
+.health-branch .branch-label {
+  color: rgba(150, 200, 255, 0.9);
 }
 
-.speed-branch .tech-node:not(.locked):not(.fog):hover .tech-node-inner {
-  background: linear-gradient(135deg, rgba(50, 100, 110, 0.95) 0%, rgba(35, 75, 85, 0.95) 100%);
-  border-color: rgba(120, 220, 220, 0.9);
-  box-shadow: 0 0 15px rgba(100, 200, 200, 0.4);
+/* Birth branch - green/cyan accent (growth/reproduction theme) */
+.birth-branch .tech-node:not(.locked):not(.fog) .tech-node-inner {
+  background: linear-gradient(135deg, rgba(40, 80, 70, 0.9) 0%, rgba(25, 55, 45, 0.9) 100%);
+  border-color: rgba(100, 200, 150, 0.6);
 }
 
-.speed-branch .tech-node:not(.locked):not(.fog) .tech-effect {
-  color: rgba(150, 230, 230, 0.9);
+.birth-branch .tech-node:not(.locked):not(.fog):hover .tech-node-inner {
+  background: linear-gradient(135deg, rgba(50, 100, 85, 0.95) 0%, rgba(35, 75, 60, 0.95) 100%);
+  border-color: rgba(120, 220, 170, 0.9);
+  box-shadow: 0 0 15px rgba(100, 200, 150, 0.4);
 }
 
-.speed-branch .tech-node.researched .tech-node-inner {
-  background: linear-gradient(135deg, rgba(60, 120, 130, 0.95) 0%, rgba(40, 90, 100, 0.95) 100%);
-  border-color: rgba(150, 230, 230, 0.8);
+.birth-branch .tech-node:not(.locked):not(.fog) .tech-effect {
+  color: rgba(150, 230, 180, 0.9);
 }
 
-/* Offense branch - orange/red accent */
-.offense-branch .tech-node:not(.locked):not(.fog) .tech-node-inner {
+.birth-branch .tech-node.researched .tech-node-inner {
+  background: linear-gradient(135deg, rgba(60, 120, 100, 0.95) 0%, rgba(40, 90, 75, 0.95) 100%);
+  border-color: rgba(150, 230, 180, 0.8);
+}
+
+.birth-branch .branch-label {
+  color: rgba(150, 230, 180, 0.9);
+}
+
+/* Fighter branch - orange/red accent (combat theme) */
+.fighter-branch .tech-node:not(.locked):not(.fog) .tech-node-inner {
   background: linear-gradient(135deg, rgba(90, 60, 40, 0.9) 0%, rgba(65, 40, 25, 0.9) 100%);
   border-color: rgba(220, 150, 100, 0.6);
 }
 
-.offense-branch .tech-node:not(.locked):not(.fog):hover .tech-node-inner {
+.fighter-branch .tech-node:not(.locked):not(.fog):hover .tech-node-inner {
   background: linear-gradient(135deg, rgba(110, 75, 50, 0.95) 0%, rgba(85, 55, 35, 0.95) 100%);
   border-color: rgba(255, 180, 120, 0.9);
   box-shadow: 0 0 15px rgba(220, 150, 100, 0.4);
 }
 
-.offense-branch .tech-node:not(.locked):not(.fog) .tech-effect {
+.fighter-branch .tech-node:not(.locked):not(.fog) .tech-effect {
   color: rgba(255, 200, 150, 0.9);
 }
 
-.offense-branch .tech-node.researched .tech-node-inner {
+.fighter-branch .tech-node.researched .tech-node-inner {
   background: linear-gradient(135deg, rgba(130, 90, 60, 0.95) 0%, rgba(100, 70, 45, 0.95) 100%);
   border-color: rgba(255, 200, 150, 0.8);
+}
+
+.fighter-branch .branch-label {
+  color: rgba(255, 200, 150, 0.9);
 }
 
 /* Responsive Tech Tree Styling */

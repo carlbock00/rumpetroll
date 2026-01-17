@@ -203,7 +203,7 @@
           <h1 class="panel-title">Cell Technology</h1>
 
           <div class="tech-tree-branch">
-            <!-- Root - splits into Defense, Speed, and Offense -->
+            <!-- Root - splits into Health, Birth, and Fighter -->
             <div class="tree-root">
               <div class="root-connector cell-connector"></div>
               <div class="middle-connector"></div>
@@ -211,9 +211,10 @@
 
             <!-- Three main branches -->
             <div class="tree-branches cell-branches">
-              <!-- Defense Branch (left) -->
-              <div class="branch defense-branch">
+              <!-- Health Branch (left) - ends in Protector -->
+              <div class="branch health-branch">
                 <div class="branch-line"></div>
+                <div class="branch-label">Health</div>
 
                 <div class="tech-node cell-tech" id="cellTechWall" data-type="cellHealth" data-level="1">
                   <div class="tech-node-inner">
@@ -225,147 +226,99 @@
                   </div>
                 </div>
 
-                <!-- Branch splits: ER and Storage -->
-                <div class="sub-branches">
-                  <div class="sub-branch-lines"></div>
+                <div class="branch-connector"></div>
 
-                  <!-- ER sub-branch (continues defense) -->
-                  <div class="sub-branch">
-                    <div class="tech-node cell-tech locked" id="cellTechER" data-type="cellHealth" data-level="2">
-                      <div class="tech-node-inner">
-                        <div class="tech-icon">🔄</div>
-                        <div class="tech-name">ER Network</div>
-                        <div class="tech-desc">Protein factory</div>
-                        <div class="tech-effect">+30 HP, +regen</div>
-                        <div class="tech-cost"><span id="cellERCost">12</span> food</div>
-                      </div>
-                    </div>
-
-                    <div class="branch-connector"></div>
-
-                    <div class="tech-node cell-tech locked" id="cellTechGolgi" data-type="cellHealth" data-level="3">
-                      <div class="tech-node-inner">
-                        <div class="tech-icon">📦</div>
-                        <div class="tech-name">Golgi Body</div>
-                        <div class="tech-desc">Packaging center</div>
-                        <div class="tech-effect">+30 HP, ++regen</div>
-                        <div class="tech-cost"><span id="cellGolgiCost">18</span> food</div>
-                      </div>
-                    </div>
-
-                    <div class="branch-connector"></div>
-
-                    <div class="tech-node cell-tech locked" id="cellTechProtector" data-type="cellProtector" data-level="4">
-                      <div class="tech-node-inner">
-                        <div class="tech-icon">⛨</div>
-                        <div class="tech-name">Protector</div>
-                        <div class="tech-desc">Guardian shield</div>
-                        <div class="tech-effect">Bubble shield ability</div>
-                        <div class="tech-cost"><span id="cellProtectorCost">25</span> food</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Storage sub-branch -->
-                  <div class="sub-branch storage-branch">
-                    <div class="tech-node cell-tech locked" id="cellTechStorage" data-type="cellCapacity" data-level="1">
-                      <div class="tech-node-inner">
-                        <div class="tech-icon">💧</div>
-                        <div class="tech-name">Vacuoles</div>
-                        <div class="tech-desc">Fluid storage sacs</div>
-                        <div class="tech-effect">+15 capacity</div>
-                        <div class="tech-cost"><span id="cellStorageCost">6</span> food</div>
-                      </div>
-                    </div>
-
-                    <!-- Split into Hibernate and Lipid branches -->
-                    <div class="storage-sub-branches">
-                      <div class="sub-branch-lines"></div>
-
-                      <!-- Hibernate branch (left) -->
-                      <div class="sub-branch hibernate-branch">
-                        <div class="tech-node cell-tech locked" id="cellTechHibernate" data-type="cellHibernate" data-level="2">
-                          <div class="tech-node-inner">
-                            <div class="tech-icon">💤</div>
-                            <div class="tech-name">Hibernate</div>
-                            <div class="tech-desc">Deep sleep ability</div>
-                            <div class="tech-effect">Birth offspring</div>
-                            <div class="tech-cost"><span id="cellHibernateCost">10</span> food</div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <!-- Lipid/Glycogen branch (right) -->
-                      <div class="sub-branch lipid-branch">
-                        <div class="tech-node cell-tech locked" id="cellTechLipid" data-type="cellCapacity" data-level="2">
-                          <div class="tech-node-inner">
-                            <div class="tech-icon">🫧</div>
-                            <div class="tech-name">Lipid Drops</div>
-                            <div class="tech-desc">Fat energy reserves</div>
-                            <div class="tech-effect">+15 capacity</div>
-                            <div class="tech-cost"><span id="cellLipidCost">10</span> food</div>
-                          </div>
-                        </div>
-
-                        <div class="branch-connector"></div>
-
-                        <div class="tech-node cell-tech locked" id="cellTechGlycogen" data-type="cellCapacity" data-level="3">
-                          <div class="tech-node-inner">
-                            <div class="tech-icon">🔋</div>
-                            <div class="tech-name">Glycogen</div>
-                            <div class="tech-desc">Sugar stockpile</div>
-                            <div class="tech-effect">+20 capacity</div>
-                            <div class="tech-cost"><span id="cellGlycogenCost">15</span> food</div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Speed Branch (center) -->
-              <div class="branch speed-branch">
-                <div class="branch-line"></div>
-
-                <div class="tech-node cell-tech" id="cellTechCilia" data-type="cellSpeed" data-level="1">
+                <div class="tech-node cell-tech locked" id="cellTechER" data-type="cellHealth" data-level="2">
                   <div class="tech-node-inner">
-                    <div class="tech-icon">〰</div>
-                    <div class="tech-name">Cilia</div>
-                    <div class="tech-desc">Hair-like paddles</div>
-                    <div class="tech-effect">+15% speed</div>
-                    <div class="tech-cost"><span id="cellCiliaCost">6</span> food</div>
+                    <div class="tech-icon">🔄</div>
+                    <div class="tech-name">ER Network</div>
+                    <div class="tech-desc">Protein factory</div>
+                    <div class="tech-effect">+30 HP, +regen</div>
+                    <div class="tech-cost"><span id="cellERCost">12</span> food</div>
                   </div>
                 </div>
 
                 <div class="branch-connector"></div>
 
-                <div class="tech-node cell-tech locked" id="cellTechMotor" data-type="cellSpeed" data-level="2">
+                <div class="tech-node cell-tech locked" id="cellTechGolgi" data-type="cellHealth" data-level="3">
                   <div class="tech-node-inner">
-                    <div class="tech-icon">🦠</div>
-                    <div class="tech-name">Motor Tail</div>
-                    <div class="tech-desc">Powered flagellum</div>
-                    <div class="tech-effect">+25% speed, tail</div>
-                    <div class="tech-cost"><span id="cellMotorCost">12</span> food</div>
+                    <div class="tech-icon">📦</div>
+                    <div class="tech-name">Golgi Body</div>
+                    <div class="tech-desc">Packaging center</div>
+                    <div class="tech-effect">+30 HP, ++regen</div>
+                    <div class="tech-cost"><span id="cellGolgiCost">18</span> food</div>
                   </div>
                 </div>
 
                 <div class="branch-connector"></div>
 
-                <div class="tech-node cell-tech locked" id="cellTechJet" data-type="cellSpeed" data-level="3">
+                <div class="tech-node cell-tech locked" id="cellTechProtector" data-type="cellProtector" data-level="4">
                   <div class="tech-node-inner">
-                    <div class="tech-icon">💨</div>
-                    <div class="tech-name">Jet Propel</div>
-                    <div class="tech-desc">Water jet system</div>
-                    <div class="tech-effect">+40% speed</div>
-                    <div class="tech-cost"><span id="cellJetCost">18</span> food</div>
+                    <div class="tech-icon">⛨</div>
+                    <div class="tech-name">Protector</div>
+                    <div class="tech-desc">Guardian shield</div>
+                    <div class="tech-effect">Bubble shield ability</div>
+                    <div class="tech-cost"><span id="cellProtectorCost">25</span> food</div>
                   </div>
                 </div>
               </div>
 
-              <!-- Offense Branch (right) -->
-              <div class="branch offense-branch">
+              <!-- Birth Branch (center) - ends in Hibernate -->
+              <div class="branch birth-branch">
                 <div class="branch-line"></div>
+                <div class="branch-label">Birth</div>
+
+                <div class="tech-node cell-tech" id="cellTechStorage" data-type="cellCapacity" data-level="1">
+                  <div class="tech-node-inner">
+                    <div class="tech-icon">💧</div>
+                    <div class="tech-name">Vacuoles</div>
+                    <div class="tech-desc">Fluid storage sacs</div>
+                    <div class="tech-effect">+15 capacity</div>
+                    <div class="tech-cost"><span id="cellStorageCost">6</span> food</div>
+                  </div>
+                </div>
+
+                <div class="branch-connector"></div>
+
+                <div class="tech-node cell-tech locked" id="cellTechLipid" data-type="cellCapacity" data-level="2">
+                  <div class="tech-node-inner">
+                    <div class="tech-icon">🫧</div>
+                    <div class="tech-name">Lipid Drops</div>
+                    <div class="tech-desc">Fat energy reserves</div>
+                    <div class="tech-effect">+15 capacity</div>
+                    <div class="tech-cost"><span id="cellLipidCost">10</span> food</div>
+                  </div>
+                </div>
+
+                <div class="branch-connector"></div>
+
+                <div class="tech-node cell-tech locked" id="cellTechGlycogen" data-type="cellCapacity" data-level="3">
+                  <div class="tech-node-inner">
+                    <div class="tech-icon">🔋</div>
+                    <div class="tech-name">Glycogen</div>
+                    <div class="tech-desc">Sugar stockpile</div>
+                    <div class="tech-effect">+20 capacity</div>
+                    <div class="tech-cost"><span id="cellGlycogenCost">15</span> food</div>
+                  </div>
+                </div>
+
+                <div class="branch-connector"></div>
+
+                <div class="tech-node cell-tech locked" id="cellTechHibernate" data-type="cellHibernate" data-level="4">
+                  <div class="tech-node-inner">
+                    <div class="tech-icon">💤</div>
+                    <div class="tech-name">Hibernate</div>
+                    <div class="tech-desc">Deep sleep ability</div>
+                    <div class="tech-effect">Birth offspring</div>
+                    <div class="tech-cost"><span id="cellHibernateCost">20</span> food</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Fighter Branch (right) - ends in Tail + Sword -->
+              <div class="branch fighter-branch">
+                <div class="branch-line"></div>
+                <div class="branch-label">Fighter</div>
 
                 <div class="tech-node cell-tech" id="cellTechEnzymes" data-type="cellStrength" data-level="1">
                   <div class="tech-node-inner">
@@ -391,13 +344,13 @@
 
                 <div class="branch-connector"></div>
 
-                <div class="tech-node cell-tech locked" id="cellTechPredator" data-type="cellStrength" data-level="3">
+                <div class="tech-node cell-tech locked" id="cellTechMotor" data-type="cellSpeed" data-level="3">
                   <div class="tech-node-inner">
-                    <div class="tech-icon">🦷</div>
-                    <div class="tech-name">Predator</div>
-                    <div class="tech-desc">Hunting appendage</div>
-                    <div class="tech-effect">+20 damage</div>
-                    <div class="tech-cost"><span id="cellPredatorCost">18</span> food</div>
+                    <div class="tech-icon">🦠</div>
+                    <div class="tech-name">Motor Tail</div>
+                    <div class="tech-desc">Powered flagellum</div>
+                    <div class="tech-effect">+40% speed, tail</div>
+                    <div class="tech-cost"><span id="cellMotorCost">18</span> food</div>
                   </div>
                 </div>
 
@@ -408,7 +361,7 @@
                     <div class="tech-icon">⚔</div>
                     <div class="tech-name">Sword</div>
                     <div class="tech-desc">Piercing blade</div>
-                    <div class="tech-effect">+25 damage, front spike</div>
+                    <div class="tech-effect">+25 damage, spike</div>
                     <div class="tech-cost"><span id="cellSwordCost">25</span> food</div>
                   </div>
                 </div>

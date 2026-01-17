@@ -856,27 +856,26 @@ const techNodes = {
   techBacteria: { type: 'transformBacteria', level: 1, cost: 15, requires: 'techNucleus' }
 };
 
-// Cell-specific technology tree
+// Cell-specific technology tree - 3 branches:
+// 1. Health → Protector (defensive shield)
+// 2. Birth → Hibernation (reproduction)
+// 3. Fighter → Tail + Sword (combat add-ons)
 const cellTechNodes = {
-  // Defense branch (root) - Health for cells
-  cellTechWall: { type: 'cellHealth', level: 1, cost: 8, requires: null, branch: 'defense' },
-  cellTechER: { type: 'cellHealth', level: 2, cost: 12, requires: 'cellTechWall', branch: 'defense' },
-  cellTechGolgi: { type: 'cellHealth', level: 3, cost: 18, requires: 'cellTechER', branch: 'defense' },
-  cellTechProtector: { type: 'cellProtector', level: 4, cost: 25, requires: 'cellTechGolgi', branch: 'defense' },
-  // Storage branch (branches from Defense)
-  cellTechStorage: { type: 'cellCapacity', level: 1, cost: 6, requires: 'cellTechWall', branch: 'defense' },
-  cellTechHibernate: { type: 'cellHibernate', level: 2, cost: 10, requires: 'cellTechStorage', branch: 'defense' },
-  cellTechLipid: { type: 'cellCapacity', level: 2, cost: 10, requires: 'cellTechStorage', branch: 'defense' },
-  cellTechGlycogen: { type: 'cellCapacity', level: 3, cost: 15, requires: 'cellTechLipid', branch: 'defense' },
-  // Speed branch (root) - Level 2 gives tail
-  cellTechCilia: { type: 'cellSpeed', level: 1, cost: 6, requires: null, branch: 'speed' },
-  cellTechMotor: { type: 'cellSpeed', level: 2, cost: 12, requires: 'cellTechCilia', branch: 'speed' },
-  cellTechJet: { type: 'cellSpeed', level: 3, cost: 18, requires: 'cellTechMotor', branch: 'speed' },
-  // Offense branch (root) - Strength for cells
-  cellTechEnzymes: { type: 'cellStrength', level: 1, cost: 8, requires: null, branch: 'offense' },
-  cellTechToxin: { type: 'cellStrength', level: 2, cost: 12, requires: 'cellTechEnzymes', branch: 'offense' },
-  cellTechPredator: { type: 'cellStrength', level: 3, cost: 18, requires: 'cellTechToxin', branch: 'offense' },
-  cellTechSword: { type: 'cellSword', level: 4, cost: 25, requires: 'cellTechPredator', branch: 'offense' }
+  // Health branch - durability upgrades ending in Protector shield
+  cellTechWall: { type: 'cellHealth', level: 1, cost: 8, requires: null, branch: 'health' },
+  cellTechER: { type: 'cellHealth', level: 2, cost: 12, requires: 'cellTechWall', branch: 'health' },
+  cellTechGolgi: { type: 'cellHealth', level: 3, cost: 18, requires: 'cellTechER', branch: 'health' },
+  cellTechProtector: { type: 'cellProtector', level: 4, cost: 25, requires: 'cellTechGolgi', branch: 'health' },
+  // Birth branch - capacity upgrades ending in Hibernation
+  cellTechStorage: { type: 'cellCapacity', level: 1, cost: 6, requires: null, branch: 'birth' },
+  cellTechLipid: { type: 'cellCapacity', level: 2, cost: 10, requires: 'cellTechStorage', branch: 'birth' },
+  cellTechGlycogen: { type: 'cellCapacity', level: 3, cost: 15, requires: 'cellTechLipid', branch: 'birth' },
+  cellTechHibernate: { type: 'cellHibernate', level: 4, cost: 20, requires: 'cellTechGlycogen', branch: 'birth' },
+  // Fighter branch - combat upgrades ending in Tail + Sword
+  cellTechEnzymes: { type: 'cellStrength', level: 1, cost: 8, requires: null, branch: 'fighter' },
+  cellTechToxin: { type: 'cellStrength', level: 2, cost: 12, requires: 'cellTechEnzymes', branch: 'fighter' },
+  cellTechMotor: { type: 'cellSpeed', level: 3, cost: 18, requires: 'cellTechToxin', branch: 'fighter' },
+  cellTechSword: { type: 'cellSword', level: 4, cost: 25, requires: 'cellTechMotor', branch: 'fighter' }
 };
 
 // Cell upgrade bonuses
@@ -3661,8 +3660,8 @@ function handleTechClick(nodeId) {
   } else if (techData.type === 'cellSpeed') {
     selectedTad.cellSpeedLevel = techData.level;
     selectedTad.cellSpeedBonus = CELL_SPEED_BONUSES[techData.level - 1];
-    // Level 2 gives a tail!
-    if (techData.level >= 2 && !selectedTad.cellTail) {
+    // Motor Tail (level 3 in Fighter branch) gives a tail!
+    if (techData.level >= 3 && !selectedTad.cellTail) {
       selectedTad.cellTail = []; // Initialize tail array - will be populated in update
       selectedTad.hasCellTail = true;
     }
@@ -3838,19 +3837,19 @@ function getUpgradeLevel(tad, type) {
   return 0;
 }
 
-// Get the chosen cell branch for a creature (defense, speed, or offense)
+// Get the chosen cell branch for a creature (health, birth, or fighter)
 function getCellBranch(tad) {
   if (!tad || tad.type !== 'cell') return null;
 
   // Check if any branch has been researched (level 1 node)
-  if ((tad.cellHealthLevel || 0) >= 1 || (tad.cellCapacityLevel || 0) >= 1 || tad.hasProtector) {
-    return 'defense';
+  if ((tad.cellHealthLevel || 0) >= 1 || tad.hasProtector) {
+    return 'health';
   }
-  if ((tad.cellSpeedLevel || 0) >= 1) {
-    return 'speed';
+  if ((tad.cellCapacityLevel || 0) >= 1 || tad.canHibernate) {
+    return 'birth';
   }
-  if ((tad.cellStrengthLevel || 0) >= 1 || tad.hasSword) {
-    return 'offense';
+  if ((tad.cellStrengthLevel || 0) >= 1 || (tad.cellSpeedLevel || 0) >= 1 || tad.hasSword || tad.hasCellTail) {
+    return 'fighter';
   }
   return null; // No branch chosen yet
 }

@@ -828,6 +828,14 @@ setInterval(() => {
       continue;
     }
 
+    // Remove NPCs with negative or zero health (should be dead)
+    if (typeof npc.health === 'number' && npc.health <= 0) {
+      console.log(`Removing dead NPC ${npc.name || npcId} with health ${npc.health}`);
+      io.emit('npcDied', { id: npcId, x: npc.x, y: npc.y, radius: npc.radius });
+      delete npcs[npcId];
+      continue;
+    }
+
     // Fix NaN velocities
     if (typeof npc.vx !== 'number' || !isFinite(npc.vx)) npc.vx = 0;
     if (typeof npc.vy !== 'number' || !isFinite(npc.vy)) npc.vy = 0;
