@@ -1212,9 +1212,18 @@ async function loadIdleNpcs() {
     const loadedNames = [];
     for (let npcId in savedIdleNpcs) {
       const savedNpc = savedIdleNpcs[npcId];
+
+      // Sanity check: skip NPCs with invalid health (should have died)
+      if (savedNpc.health <= 0) {
+        console.log(`Skipping dead idle NPC ${savedNpc.name || npcId} (health: ${savedNpc.health})`);
+        continue;
+      }
+
       // Restore idle NPC with all its properties
       npcs[npcId] = {
         ...savedNpc,
+        // Ensure health is valid (fix any corrupted data)
+        health: Math.max(1, savedNpc.health || savedNpc.maxHealth || 80),
         lastMoveTime: Date.now(),
         lastAttack: 0,
         lastHit: 0
