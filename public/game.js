@@ -5787,7 +5787,23 @@ function update(deltaTime = 1) {
           hasProtector: tad.hasProtector,
           hasSword: tad.hasSword,
           hasCellTail: tad.hasCellTail,
-          bubbleShieldActive: tad.bubbleShieldActive
+          bubbleShieldActive: tad.bubbleShieldActive,
+          canHibernate: tad.canHibernate,
+          isFarming: tad.isFarming,
+          // Tadpole upgrades
+          healthLevel: tad.healthLevel || 0,
+          strengthLevel: tad.strengthLevel || 0,
+          capacityLevel: tad.capacityLevel || 0,
+          maxHealthBonus: tad.maxHealthBonus || 0,
+          strengthBonus: tad.strengthBonus || 0,
+          // Cell upgrades
+          cellHealthLevel: tad.cellHealthLevel || 0,
+          cellStrengthLevel: tad.cellStrengthLevel || 0,
+          cellCapacityLevel: tad.cellCapacityLevel || 0,
+          cellSpeedLevel: tad.cellSpeedLevel || 0,
+          cellSpeedBonus: tad.cellSpeedBonus || 0,
+          cellStrengthBonus: tad.cellStrengthBonus || 0,
+          cellMaxHealthBonus: tad.cellMaxHealthBonus || 0
         }));
 
         // Debug: log creatures being sent (rate-limited to every 5 seconds)
