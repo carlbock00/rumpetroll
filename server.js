@@ -2344,6 +2344,35 @@ io.on('connection', (socket) => {
   socket.on('playerActive', () => {
     // If player was converted to NPC, re-add them to players
     if (!players[socket.id]) {
+      // First check if another window already has the player for this username
+      const username = socketToUser[socket.id];
+      if (username) {
+        const existingPlayerId = findPlayerByUsername(username);
+        if (existingPlayerId && existingPlayerId !== socket.id) {
+          // Another window has the player - this socket should be secondary
+          console.log(`Player ${socket.id} (${username}) tab visible, but ${existingPlayerId} already has player - becoming secondary`);
+
+          // Track this socket as belonging to this user
+          if (!userSockets[username]) {
+            userSockets[username] = new Set();
+          }
+          userSockets[username].add(socket.id);
+          userSockets[username].add(existingPlayerId);
+
+          // Send the existing player's data to this window
+          const existingPlayer = players[existingPlayerId];
+          socket.emit('init', {
+            id: existingPlayerId,
+            player: existingPlayer,
+            isSecondary: true
+          });
+          socket.emit('players', players);
+          socket.emit('food', food);
+          socket.emit('npcs', npcs);
+          return; // Don't create a new player
+        }
+      }
+
       console.log(`Player ${socket.id} tab became visible, re-adding to players`);
 
       // Find ALL NPCs that belong to this player (they have IDs like ${socket.id}_creature_0)
