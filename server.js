@@ -2302,7 +2302,34 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Handle player death notification (so other players see it)
+  // Handle individual creature death (player still has other creatures)
+  socket.on('creatureDied', (data) => {
+    console.log(`Creature ${data.creatureId} died for player ${socket.id}, ${data.remainingCreatures} remaining`);
+
+    // Broadcast to other players
+    socket.broadcast.emit('otherCreatureDied', {
+      playerId: socket.id,
+      creatureId: data.creatureId,
+      x: data.x,
+      y: data.y
+    });
+
+    // Clear any NPCs that were targeting this specific creature
+    for (let npcId in npcs) {
+      const npc = npcs[npcId];
+      if (npc.attackTarget === data.creatureId) {
+        npc.attackTarget = null;
+      }
+    }
+
+    // Update player's creatures array on server if it exists
+    const player = players[socket.id];
+    if (player && player.creatures) {
+      player.creatures = player.creatures.filter(c => c.id !== data.creatureId);
+    }
+  });
+
+  // Handle player death notification (ALL creatures dead)
   socket.on('playerDied', (data) => {
     // Mark player as dead - prevents them from being converted to idle NPC on disconnect
     if (players[socket.id]) {

@@ -70,6 +70,9 @@ async function checkSession() {
     const data = await response.json();
     if (data.loggedIn) {
       currentUser = data.user;
+      // IMPORTANT: Clean up any NPCs that belong to this user that were added
+      // before we knew who the user was (race condition fix)
+      cleanupOwnIdleNpcs();
       updateUserUI();
       if (data.progress?.creature_data) {
         loadProgressFromServer(data.progress);
@@ -79,6 +82,24 @@ async function checkSession() {
     console.error('Session check failed:', error);
   } finally {
     sessionCheckComplete = true;
+  }
+}
+
+// Clean up any idle NPCs that belong to the current user
+function cleanupOwnIdleNpcs() {
+  if (!currentUser) return;
+  const username = currentUser.username;
+  let removed = 0;
+  for (let npcId in npcs) {
+    const npc = npcs[npcId];
+    if (npc.isIdlePlayer && (npc.name === username || npc.ownerName === username)) {
+      console.log(`[CLEANUP] Removing own idle NPC: ${npcId}`);
+      delete npcs[npcId];
+      removed++;
+    }
+  }
+  if (removed > 0) {
+    console.log(`[CLEANUP] Removed ${removed} own idle NPCs`);
   }
 }
 
@@ -1645,6 +1666,12 @@ socket.on('players', (serverPlayers) => {
 });
 
 socket.on('playerJoined', (player) => {
+  // Don't add our own player to the players dict - we control our creatures directly
+  if (player.id === myId) {
+    console.log('Ignoring playerJoined for own player');
+    return;
+  }
+
   player.renderX = player.x;
   player.renderY = player.y;
   // Preserve server values, only set defaults if not provided
@@ -2276,6 +2303,29 @@ socket.on('otherPlayerDied', (data) => {
     // Remove from players list so they disappear
     delete players[data.playerId];
     console.log(`Player ${data.playerId} died`);
+  }
+});
+
+// Handle other player's creature dying (they still have more creatures)
+socket.on('otherCreatureDied', (data) => {
+  const player = players[data.playerId];
+  if (player && player.creatures) {
+    // Remove the specific creature from their creatures array
+    player.creatures = player.creatures.filter(c => c.id !== data.creatureId);
+
+    // Create death effect
+    deathEffects.push({
+      x: data.x,
+      y: data.y,
+      radius: 8,
+      startTime: Date.now(),
+      duration: 2000
+    });
+
+    // Clear render cache for this creature
+    if (player._creatureRenderCache) {
+      delete player._creatureRenderCache[data.creatureId];
+    }
   }
 });
 
@@ -4464,6 +4514,24 @@ function update(deltaTime = 1) {
     }
   });
 
+  // CRITICAL: Remove our own player from the players dict if it somehow got in
+  // This prevents the bug where we see ourselves doubled AND our own duplicate attacks us!
+  if (myId && players[myId]) {
+    console.error('[BUG FIX] Removing own player from players dict - this should not happen!');
+    delete players[myId];
+  }
+
+  // Also remove any player entries for our username (handles edge cases)
+  if (currentUser) {
+    for (let playerId in players) {
+      const p = players[playerId];
+      if (p.name === currentUser.username && playerId !== myId) {
+        console.error(`[BUG FIX] Removing duplicate player with our username: ${playerId}`);
+        delete players[playerId];
+      }
+    }
+  }
+
   // Auto-select single creature (no yellow highlight)
   if (myTadpoles.length === 1 && selectedTadpoles.size === 0) {
     selectedTadpoles.add(myTadpoles[0].id);
@@ -5939,8 +6007,13 @@ function handleDeath(entity) {
     myTadpoles = myTadpoles.filter(t => t !== entity);
     selectedTadpoles.delete(entity.id);
 
-    // Notify server that player died (clears saved position, resets NPC targeting)
-    socket.emit('playerDied', { x: entity.x, y: entity.y });
+    // Emit creature death event (NOT playerDied - that's only when ALL creatures die)
+    socket.emit('creatureDied', {
+      creatureId: entity.id,
+      x: entity.x,
+      y: entity.y,
+      remainingCreatures: myTadpoles.length
+    });
 
     // Sync remaining creatures (if any) immediately after death
     if (myTadpoles.length > 0) {
@@ -5951,6 +6024,8 @@ function handleDeath(entity) {
     updateSelectionCount();
 
     if (myTadpoles.length === 0) {
+      // ONLY now do we notify that the player fully died (all creatures dead)
+      socket.emit('playerDied', { x: entity.x, y: entity.y });
       isDead = true;
       deathScreen.classList.remove('hidden');
       // Clear saved progress so player starts fresh as tadpole
