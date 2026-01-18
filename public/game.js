@@ -1668,100 +1668,85 @@ socket.on('playerLeft', (id) => {
 socket.on('playerIdle', (data) => {
   const playerId = data.id;
   const playerData = data.player;
+  const serverCreatures = data.creatures || [];
 
   // Don't convert own player to NPC
   if (playerId === myId) return;
 
-  // Remove from players if they're there
-  if (players[playerId]) {
-    console.log('Converting idle player to idle NPC:', playerData.name || playerId);
+  // Remove from players
+  delete players[playerId];
 
-    // Determine if player was a cell or tadpole
-    const wasCell = playerData.type === 'cell';
+  console.log('Converting idle player to idle NPC:', playerData.name || playerId,
+              `(${serverCreatures.length} creatures from server)`);
 
-    // Convert to idle NPC - preserve player type and name
-    const idleHealth = wasCell ? NPC_CELL_HEALTH : NPC_TADPOLE_HEALTH;
-    const npc = {
-      id: playerId,
-      x: playerData.x,
-      y: playerData.y,
-      vx: 0, // Idle players don't move until provoked
-      vy: 0,
-      renderX: playerData.x,
-      renderY: playerData.y,
-      color: '#a0a0a0', // Light grey for idle players
-      radius: wasCell ? NPC_CELL_RADIUS : NPC_TADPOLE_RADIUS,
-      score: 0,
-      name: playerData.name || '', // Preserve player name for idle players
-      health: idleHealth,
-      maxHealth: idleHealth,
-      lastHit: 0,
-      lastAttack: 0,
-      type: wasCell ? 'cell' : 'tadpole',
-      moveTarget: null,
-      targetChangeTime: Date.now(),
-      provoked: false,
-      food: playerData.food || 0, // Preserve food storage
-      isIdlePlayer: true // Mark as idle player for special rendering
-    };
-    npc.renderX = npc.x;
-    npc.renderY = npc.y;
-
-    // Initialize based on type
-    if (wasCell) {
-      // Cells need angle and wiggleOffset
-      npc.angle = playerData.angle || 0;
-      npc.wiggleOffset = playerData.wiggleOffset || Math.random() * Math.PI * 2;
-      // Clear any tail data from previous tadpole state
-      npc.tail = null;
-      // Cell fatigue system
-      npc.chaseEnergy = 100;
-      npc.maxChaseEnergy = 100;
-      npc.isTired = false;
-      npc.tiredStartTime = 0;
-    } else {
-      // Initialize as tadpole
-      initializeTadpole(npc);
-    }
-
-    // Add to NPCs
-    npcs[playerId] = npc;
-
-    // Remove from players
-    delete players[playerId];
+  // If server sent creatures array, use those IDs (they'll be synced via npcUpdate)
+  // Otherwise fall back to creating a single NPC
+  if (serverCreatures.length > 0) {
+    // Server will send the NPCs via npcUpdate, so just remove the player
+    // The NPCs will have IDs like ${playerId}_creature_0, ${playerId}_creature_1
+    // Don't create local NPCs here - let npcUpdate handle it to avoid duplicates
+    return;
   }
+
+  // Fallback: single creature case (no creatures array from server)
+  const wasCell = playerData.type === 'cell';
+  const idleHealth = wasCell ? NPC_CELL_HEALTH : NPC_TADPOLE_HEALTH;
+  const npc = {
+    id: playerId,
+    x: playerData.x,
+    y: playerData.y,
+    vx: 0,
+    vy: 0,
+    renderX: playerData.x,
+    renderY: playerData.y,
+    color: '#a0a0a0',
+    radius: wasCell ? NPC_CELL_RADIUS : NPC_TADPOLE_RADIUS,
+    score: 0,
+    name: playerData.name || '',
+    health: idleHealth,
+    maxHealth: idleHealth,
+    lastHit: 0,
+    lastAttack: 0,
+    type: wasCell ? 'cell' : 'tadpole',
+    moveTarget: null,
+    targetChangeTime: Date.now(),
+    provoked: false,
+    food: playerData.food || 0,
+    isIdlePlayer: true
+  };
+
+  if (wasCell) {
+    npc.angle = playerData.angle || 0;
+    npc.wiggleOffset = playerData.wiggleOffset || Math.random() * Math.PI * 2;
+    npc.tail = null;
+    npc.chaseEnergy = 100;
+    npc.maxChaseEnergy = 100;
+    npc.isTired = false;
+    npc.tiredStartTime = 0;
+  } else {
+    initializeTadpole(npc);
+  }
+
+  npcs[playerId] = npc;
 });
 
 socket.on('playerActive', (data) => {
   const playerId = data.id;
 
-  // If this was an idle NPC, convert back to player
-  if (npcs[playerId] && !players[playerId]) {
-    console.log('Player became active again, converting NPC back to player:', playerId);
+  // Find and remove ALL NPCs that belong to this player
+  // (both ${playerId} and ${playerId}_creature_*)
+  const playerNpcIds = Object.keys(npcs).filter(npcId =>
+    npcId === playerId || npcId.startsWith(`${playerId}_creature_`)
+  );
 
-    const npc = npcs[playerId];
-    const player = {
-      id: playerId,
-      x: npc.x,
-      y: npc.y,
-      vx: npc.vx || 0,
-      vy: npc.vy || 0,
-      renderX: npc.x,
-      renderY: npc.y,
-      color: '#4a5a6a', // Player color
-      radius: TADPOLE_RADIUS,
-      score: 0,
-      name: npc.name || '',
-      health: MAX_HEALTH,
-      lastHit: 0,
-      lastAttack: 0,
-      type: 'tadpole'
-    };
-
-    initializeTadpole(player);
-    players[playerId] = player;
-    delete npcs[playerId];
+  if (playerNpcIds.length > 0) {
+    console.log(`Player ${playerId} became active again, removing ${playerNpcIds.length} NPCs`);
+    playerNpcIds.forEach(npcId => {
+      delete npcs[npcId];
+    });
   }
+
+  // Server will send playerJoined with the player data, so we don't need to create it here
 });
 
 socket.on('playerMoved', (data) => {
@@ -1803,6 +1788,16 @@ socket.on('playerStateUpdate', (playerStates) => {
     if (playerId === myId) continue;
 
     const state = playerStates[playerId];
+
+    // IMPORTANT: If this player exists in server state, clean up any orphaned NPCs for them
+    // This prevents the bug where both NPCs and player.creatures exist simultaneously
+    const orphanedNpcIds = Object.keys(npcs).filter(npcId =>
+      npcId === playerId || npcId.startsWith(`${playerId}_creature_`)
+    );
+    if (orphanedNpcIds.length > 0) {
+      console.log(`[SYNC FIX] Cleaning up ${orphanedNpcIds.length} orphaned NPCs for active player ${playerId}`);
+      orphanedNpcIds.forEach(npcId => delete npcs[npcId]);
+    }
 
     if (players[playerId]) {
       // Update existing player with server state
@@ -6348,14 +6343,6 @@ function render() {
 
   // Draw other players and their creatures
   Object.values(players).forEach(player => {
-    // Debug: show creature count above player (temporary)
-    if (player.creatures && player.creatures.length > 1) {
-      const debugX = player.x;
-      const debugY = player.y - 50;
-      ctx.fillStyle = 'yellow';
-      ctx.font = '14px Arial';
-      ctx.fillText(`${player.creatures.length} creatures`, debugX - 30, debugY);
-    }
     // If player has creatures array with data, draw from that (more accurate positions)
     if (player.creatures && player.creatures.length > 0) {
       // Initialize creature render cache if needed (for smooth interpolation)
