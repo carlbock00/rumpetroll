@@ -1280,6 +1280,14 @@ socket.on('disconnect', () => {
   statusEl.className = 'disconnected';
 });
 
+// Restore explored regions when logging in
+socket.on('restoreExploredRegions', (data) => {
+  if (data.regions && Array.isArray(data.regions)) {
+    console.log(`Restoring ${data.regions.length} explored regions`);
+    data.regions.forEach(region => exploredRegions.add(region));
+  }
+});
+
 // Restore position from idle NPC when reconnecting
 socket.on('restorePosition', (data) => {
   console.log(`Restoring position from idle NPC: (${data.x}, ${data.y})`);
@@ -2485,10 +2493,10 @@ socket.on('worldReset', (data) => {
   }
   // Reset food
   food = data.food || {};
-  // Reset fog of war - only keep current position explored
-  exploredRegions.clear();
+  // DON'T reset fog of war - explored regions persist across sessions and world resets
+  // exploredRegions.clear();
   // Keep myTadpoles intact - player's creatures are preserved
-  console.log('World reset complete - NPCs and food regenerated, your creatures preserved');
+  console.log('World reset complete - NPCs and food regenerated, your creatures and explored map preserved');
 });
 
 // NPCs are now initialized by the server - no local initialization needed
@@ -6042,6 +6050,14 @@ function update(deltaTime = 1) {
         });
       }
       update.lastStateSync = Date.now();
+    }
+
+    // Sync explored regions less frequently (every 5 seconds)
+    if (currentUser && exploredRegions.size > 0 && (!update.lastExploredSync || Date.now() - update.lastExploredSync > 5000)) {
+      socket.emit('syncExploredRegions', {
+        regions: Array.from(exploredRegions)
+      });
+      update.lastExploredSync = Date.now();
     }
   }
 

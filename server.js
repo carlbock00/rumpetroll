@@ -1566,6 +1566,14 @@ io.on('connection', (socket) => {
     socket.emit('food', food);
     socket.emit('npcs', npcs);
 
+    // Send saved explored regions if user is logged in
+    if (sessionUsername && userPositions[sessionUsername]?.exploredRegions) {
+      socket.emit('restoreExploredRegions', {
+        regions: userPositions[sessionUsername].exploredRegions
+      });
+      console.log(`Restored ${userPositions[sessionUsername].exploredRegions.length} explored regions for ${sessionUsername}`);
+    }
+
     // Broadcast new player to all other clients
     socket.broadcast.emit('playerJoined', players[socket.id]);
   }
@@ -1652,7 +1660,9 @@ io.on('connection', (socket) => {
           canHibernate: p.canHibernate || false,
           isFarming: p.isFarming || false,
           // Secondary creatures
-          creatures: p.creatures || []
+          creatures: p.creatures || [],
+          // Preserve existing explored regions (don't overwrite - they're synced separately)
+          exploredRegions: userPositions[playerName]?.exploredRegions || []
         };
       }
 
@@ -1733,6 +1743,22 @@ io.on('connection', (socket) => {
         console.log(`Player ${socket.id} synced ${data.creatures.length} creatures:`, data.creatures.map(c => `${c.type}@${Math.round(c.x)},${Math.round(c.y)}`).join(', '));
       }
     }
+  });
+
+  // Handle explored regions sync (fog of war persistence)
+  socket.on('syncExploredRegions', (data) => {
+    const username = socketToUser[socket.id];
+    if (!username || !data.regions) return;
+
+    // Store explored regions for this user (limit to prevent abuse)
+    const MAX_EXPLORED_REGIONS = 10000; // Reasonable limit
+    const regions = Array.isArray(data.regions) ? data.regions.slice(0, MAX_EXPLORED_REGIONS) : [];
+
+    // Save to userPositions for persistence
+    if (!userPositions[username]) {
+      userPositions[username] = {};
+    }
+    userPositions[username].exploredRegions = regions;
   });
 
   // Handle player name change (simplified - connection handler does restoration for logged-in users)
