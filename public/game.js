@@ -1106,6 +1106,7 @@ let deathEffects = []; // Array of death splat effects
 let particles = []; // Ambient floating particles
 let damageTexts = []; // Array of damage text instances
 let vanishingFood = []; // Food items that are fading out
+let fullMapVisible = false; // True when full map overlay is shown
 let waitingForSupportTarget = false; // True when selecting a creature to support
 let supportSourceId = null; // ID of creature that will do the supporting
 let waitingForFoodTarget = false; // True when selecting a creature to give food to
@@ -3041,6 +3042,21 @@ canvas.addEventListener('click', (e) => {
   const rect = canvas.getBoundingClientRect();
   const clickX = e.clientX - rect.left;
   const clickY = e.clientY - rect.top;
+
+  // Check if clicking on minimap to toggle full map view
+  const minimapSize = 150;
+  const minimapPadding = 20;
+  if (clickX >= minimapPadding && clickX <= minimapPadding + minimapSize &&
+      clickY >= minimapPadding && clickY <= minimapPadding + minimapSize) {
+    fullMapVisible = !fullMapVisible;
+    return;
+  }
+
+  // If full map is visible, click anywhere to close it
+  if (fullMapVisible) {
+    fullMapVisible = false;
+    return;
+  }
 
   // Convert to world coordinates
   const worldX = clickX - canvas.width / 2 + camera.x;
@@ -6950,9 +6966,13 @@ function render() {
   // Draw soft vignette effect (screen-space overlay)
   drawVignette();
 
-  // Draw minimap
+  // Draw minimap or full map
   if (myTadpoles.length > 0) {
-    drawMinimap();
+    if (fullMapVisible) {
+      drawFullMap();
+    } else {
+      drawMinimap();
+    }
   }
 }
 
@@ -8676,6 +8696,138 @@ function drawMinimap() {
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
   ctx.lineWidth = 2;
   ctx.strokeRect(minimapX, minimapY, minimapSize, minimapSize);
+}
+
+// Full map overlay - shows larger map when minimap is clicked
+function drawFullMap() {
+  const padding = 50;
+  const mapSize = Math.min(canvas.width, canvas.height) - padding * 2;
+  const mapX = (canvas.width - mapSize) / 2;
+  const mapY = (canvas.height - mapSize) / 2;
+
+  // Semi-transparent background overlay
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Map background
+  ctx.fillStyle = 'rgba(5, 8, 15, 0.95)';
+  ctx.fillRect(mapX, mapY, mapSize, mapSize);
+
+  // Calculate world bounds based on explored regions
+  let minWorldX = Infinity, maxWorldX = -Infinity;
+  let minWorldY = Infinity, maxWorldY = -Infinity;
+
+  exploredRegions.forEach(regionKey => {
+    const [rx, ry] = regionKey.split(',').map(Number);
+    const worldX = rx * FOG_REGION_SIZE;
+    const worldY = ry * FOG_REGION_SIZE;
+    minWorldX = Math.min(minWorldX, worldX);
+    maxWorldX = Math.max(maxWorldX, worldX + FOG_REGION_SIZE);
+    minWorldY = Math.min(minWorldY, worldY);
+    maxWorldY = Math.max(maxWorldY, worldY + FOG_REGION_SIZE);
+  });
+
+  // Include player position in bounds
+  const playerX = myTadpoles.length > 0 ? myTadpoles[0].x : 0;
+  const playerY = myTadpoles.length > 0 ? myTadpoles[0].y : 0;
+  minWorldX = Math.min(minWorldX, playerX - 500);
+  maxWorldX = Math.max(maxWorldX, playerX + 500);
+  minWorldY = Math.min(minWorldY, playerY - 500);
+  maxWorldY = Math.max(maxWorldY, playerY + 500);
+
+  // Ensure minimum world size
+  const worldWidth = Math.max(maxWorldX - minWorldX, 2000);
+  const worldHeight = Math.max(maxWorldY - minWorldY, 2000);
+  const centerX = (minWorldX + maxWorldX) / 2;
+  const centerY = (minWorldY + maxWorldY) / 2;
+
+  const scale = mapSize / Math.max(worldWidth, worldHeight);
+
+  // Set up clipping
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(mapX, mapY, mapSize, mapSize);
+  ctx.clip();
+
+  // Draw explored regions
+  exploredRegions.forEach(regionKey => {
+    const [rx, ry] = regionKey.split(',').map(Number);
+    const worldRX = rx * FOG_REGION_SIZE;
+    const worldRY = ry * FOG_REGION_SIZE;
+    const screenX = mapX + mapSize / 2 + (worldRX - centerX) * scale;
+    const screenY = mapY + mapSize / 2 + (worldRY - centerY) * scale;
+    const regionSize = FOG_REGION_SIZE * scale;
+
+    ctx.fillStyle = 'rgba(20, 30, 50, 0.8)';
+    ctx.fillRect(screenX, screenY, regionSize + 1, regionSize + 1);
+  });
+
+  // Draw origin marker
+  const originScreenX = mapX + mapSize / 2 + (0 - centerX) * scale;
+  const originScreenY = mapY + mapSize / 2 + (0 - centerY) * scale;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+  ctx.beginPath();
+  ctx.arc(originScreenX, originScreenY, 6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Helper to draw entities
+  const drawEntity = (entity, color, size) => {
+    if (!isExplored(entity.x, entity.y)) return;
+    const screenX = mapX + mapSize / 2 + (entity.x - centerX) * scale;
+    const screenY = mapY + mapSize / 2 + (entity.y - centerY) * scale;
+    if (screenX < mapX || screenX > mapX + mapSize ||
+        screenY < mapY || screenY > mapY + mapSize) return;
+
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(screenX, screenY, size, 0, Math.PI * 2);
+    ctx.fill();
+  };
+
+  // Draw NPCs
+  Object.values(npcs).forEach(npc => {
+    if (npc.health <= 0) return;
+    const color = npc.isIdlePlayer ? 'rgba(255, 200, 100, 0.8)' :
+                  npc.type === 'cell' ? 'rgba(255, 100, 100, 0.8)' : 'rgba(255, 150, 150, 0.8)';
+    drawEntity(npc, color, npc.type === 'cell' ? 5 : 3);
+  });
+
+  // Draw other players
+  Object.values(players).forEach(player => {
+    if (player.health <= 0) return;
+    drawEntity(player, 'rgba(255, 255, 100, 0.8)', 4);
+  });
+
+  // Draw own creatures (larger, bright)
+  myTadpoles.forEach(tad => {
+    const screenX = mapX + mapSize / 2 + (tad.x - centerX) * scale;
+    const screenY = mapY + mapSize / 2 + (tad.y - centerY) * scale;
+    ctx.fillStyle = tad.type === 'cell' ? 'rgba(100, 255, 100, 1)' :
+                    tad.type === 'bacteria' ? 'rgba(100, 255, 150, 1)' : 'rgba(100, 200, 255, 1)';
+    ctx.beginPath();
+    ctx.arc(screenX, screenY, 6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Pulse effect for current creature
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(screenX, screenY, 10, 0, Math.PI * 2);
+    ctx.stroke();
+  });
+
+  ctx.restore();
+
+  // Draw border
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(mapX, mapY, mapSize, mapSize);
+
+  // Draw instruction text
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+  ctx.font = '14px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('Click anywhere to close', canvas.width / 2, mapY + mapSize + 30);
 }
 
 function hexToRGBA(hex, alpha) {
