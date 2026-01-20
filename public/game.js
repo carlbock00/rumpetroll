@@ -3155,6 +3155,7 @@ canvas.addEventListener('click', (e) => {
     const creaturesCanMove = selectedCreatures.filter(t => {
       if (t.supportMode) return false;
       if (t.type === 'cell' && t.hasProtector && t.bubbleShieldActive) return false;
+      if (t.isFarming) return false; // Farming bacteria can't move
       return true;
     });
 
@@ -3202,7 +3203,8 @@ canvas.addEventListener('click', (e) => {
     // Attack target - set per-creature
     const selectedCreatures = myTadpoles.filter(t => selectedTadpoles.has(t.id));
     selectedCreatures.forEach(t => {
-      if (!t.supportMode) { // Only non-support creatures can attack independently
+      // Only non-support, non-farming creatures can attack independently
+      if (!t.supportMode && !t.isFarming) {
         t.attackTarget = clickedEntity;
         t.moveTarget = null;
         t.collectFoodAt = null;
@@ -3214,12 +3216,14 @@ canvas.addEventListener('click', (e) => {
     // Move to location - check if any selected creature can actually move
     const selectedCreatures = myTadpoles.filter(t => selectedTadpoles.has(t.id));
 
-    // Check if any creature can move (not supporting and not shielded)
+    // Check if any creature can move (not supporting, shielded, or farming)
     const creaturesCanMove = selectedCreatures.filter(t => {
       // Supporting creatures can't move independently
       if (t.supportMode) return false;
       // Protector cells with active shield can't move
       if (t.type === 'cell' && t.hasProtector && t.bubbleShieldActive) return false;
+      // Farming bacteria can't move
+      if (t.isFarming) return false;
       return true;
     });
 
@@ -3548,6 +3552,20 @@ supportBtn.addEventListener('click', () => {
         waitingForSupportTarget = false;
         supportSourceId = null;
       } else {
+        // Can't support if shield is active
+        if (selectedTad.bubbleShieldActive) {
+          console.log('Cannot support while shield is active - deactivate shield first');
+          flashButton(supportBtn);
+          flashButton(shieldBtn);
+          return;
+        }
+        // Can't support if farming
+        if (selectedTad.isFarming) {
+          console.log('Cannot support while farming - stop farming first');
+          flashButton(supportBtn);
+          flashButton(farmBtn);
+          return;
+        }
         // Enter selection mode - waiting for player to click a creature to support
         waitingForSupportTarget = true;
         supportSourceId = selectedTad.id;
@@ -3617,6 +3635,14 @@ shieldBtn.addEventListener('click', () => {
     const selectedTad = myTadpoles.find(t => t.id === selectedId);
 
     if (selectedTad && selectedTad.type === 'cell' && selectedTad.hasProtector && !selectedTad.isHibernating) {
+      // Supporting creatures cannot activate shield - must unlink first
+      if (selectedTad.supportMode) {
+        console.log('Cannot activate shield while supporting - unlink first');
+        flashButton(shieldBtn);
+        flashButton(supportBtn);
+        return;
+      }
+
       // When activating shield, check if we have enough food (costs 1 food per hour)
       if (!selectedTad.bubbleShieldActive && (selectedTad.food || 0) < 1) {
         console.log('Not enough food to activate shield (costs 1 food/hour)');
@@ -3638,8 +3664,20 @@ farmBtn.addEventListener('click', () => {
     const selectedTad = myTadpoles.find(t => t.id === selectedId);
 
     if (selectedTad && selectedTad.type === 'bacteria') {
+      // Can't start farming if supporting
+      if (!selectedTad.isFarming && selectedTad.supportMode) {
+        console.log('Cannot farm while supporting - unlink first');
+        flashButton(farmBtn);
+        flashButton(supportBtn);
+        return;
+      }
       // Toggle farming mode
       selectedTad.isFarming = !selectedTad.isFarming;
+      // Clear any movement/attack targets when starting to farm
+      if (selectedTad.isFarming) {
+        selectedTad.moveTarget = null;
+        selectedTad.attackTarget = null;
+      }
       console.log(`Bacteria farming mode: ${selectedTad.isFarming ? 'ON' : 'OFF'}`);
       updateSelectionCount();
     }
