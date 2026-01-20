@@ -6115,29 +6115,6 @@ function update(deltaTime = 1) {
     camera.y += (camera.targetY - camera.y) * CAMERA_SMOOTHING;
   }
 
-  // Deselect tadpoles that are out of view
-  const viewPadding = 50;
-  const viewLeft = camera.x - canvas.width / 2 - viewPadding;
-  const viewRight = camera.x + canvas.width / 2 + viewPadding;
-  const viewTop = camera.y - canvas.height / 2 - viewPadding;
-  const viewBottom = camera.y + canvas.height / 2 + viewPadding;
-
-  let selectionChanged = false;
-  selectedTadpoles.forEach(tadId => {
-    const tad = myTadpoles.find(t => t.id === tadId);
-    if (tad) {
-      if (tad.x < viewLeft || tad.x > viewRight || tad.y < viewTop || tad.y > viewBottom) {
-        selectedTadpoles.delete(tadId);
-        selectionChanged = true;
-      }
-    }
-  });
-
-  // Only update UI if selection actually changed
-  if (selectionChanged) {
-    updateSelectionCount();
-  }
-
   // Show/hide menu based on selection
   if (selectedTadpoles.size > 0) {
     selectionMenu.classList.remove('hidden');
