@@ -938,6 +938,10 @@ creatureList.addEventListener('click', (e) => {
         supportSourceId = null;
         updateSelectionCount();
         return;
+      } else if (tad.supportMode) {
+        // Can't support a creature that is already supporting someone else
+        console.log('Cannot support a creature that is already supporting another');
+        return;
       } else {
         // Clicking a valid target sets up the support relationship
         const sourceCreature = myTadpoles.find(t => t.id === supportSourceId);
@@ -3083,6 +3087,12 @@ canvas.addEventListener('click', (e) => {
   if (waitingForSupportTarget && clickedEntity && myTadpoles.includes(clickedEntity)) {
     const sourceCreature = myTadpoles.find(t => t.id === supportSourceId);
     if (sourceCreature && clickedEntity.id !== supportSourceId) {
+      // Can't support a creature that is already supporting someone else
+      if (clickedEntity.supportMode) {
+        console.log('Cannot support a creature that is already supporting another');
+        return;
+      }
+
       // Set up support relationship
       sourceCreature.supportMode = true;
       sourceCreature.supportLeader = clickedEntity.id;
@@ -4405,6 +4415,11 @@ function updateCreatureList() {
         // Source creature - show it's selecting a target
         item.style.background = 'rgba(255, 255, 100, 0.3)';
         item.style.borderColor = 'rgba(255, 255, 100, 0.7)';
+      } else if (tad.supportMode) {
+        // Already supporting - can't be a target (show as unavailable)
+        item.style.background = 'rgba(100, 100, 100, 0.3)';
+        item.style.borderColor = 'rgba(100, 100, 100, 0.7)';
+        item.style.opacity = '0.5';
       } else {
         // Valid target - show it can be selected
         item.style.background = 'rgba(100, 255, 100, 0.3)';
@@ -4884,13 +4899,50 @@ function update(deltaTime = 1) {
           }
         }
 
-        // Intelligent positioning based on situation
-        if (supportAttackTarget) {
-          // When attacking: flank the target for better angle
-          // Position on opposite side of target from leader
-          const targetToLeaderAngle = Math.atan2(leader.y - supportAttackTarget.y, leader.x - supportAttackTarget.x);
-          const flankAngle = targetToLeaderAngle + Math.PI; // Opposite side
-          const flankDistance = 90; // Distance from target to flank position (maintain separation)
+        // Find all supporters of this leader (for formation positioning)
+        const allSupportersOfLeader = myTadpoles.filter(t => t.supportMode && t.supportLeader === leader.id);
+        const supporterIndex = allSupportersOfLeader.indexOf(tad);
+        const totalSupporters = allSupportersOfLeader.length;
+
+        // Check if supporter is blocking leader's path - move out of the way
+        const leaderSpeed = Math.sqrt(leader.vx * leader.vx + leader.vy * leader.vy);
+        if (leaderSpeed > 0.3 && leaderDist < minDistance * 1.5) {
+          // Leader is moving and we're close - check if we're in the way
+          const leaderMoveAngle = Math.atan2(leader.vy, leader.vx);
+          const angleToSupporter = Math.atan2(tad.y - leader.y, tad.x - leader.x);
+
+          // Calculate angle difference (how much we're in the leader's path)
+          let angleDiff = Math.abs(leaderMoveAngle - angleToSupporter);
+          if (angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff;
+
+          // If we're roughly in the leader's path (within 60 degrees), get out of the way
+          if (angleDiff < Math.PI / 3) {
+            // Move perpendicular to leader's movement direction
+            const escapeAngle = leaderMoveAngle + (Math.random() > 0.5 ? Math.PI / 2 : -Math.PI / 2);
+            const escapeDistance = minDistance + 50;
+            const escapeX = tad.x + Math.cos(escapeAngle) * escapeDistance;
+            const escapeY = tad.y + Math.sin(escapeAngle) * escapeDistance;
+            supportMoveTarget = { x: escapeX, y: escapeY };
+            // Skip normal positioning - we need to get out of the way first
+          }
+        }
+
+        // Intelligent positioning based on situation (only if not escaping)
+        if (!supportMoveTarget && supportAttackTarget) {
+          // When attacking: spread attackers around the target
+          // Each supporter gets a unique angle based on their index
+          const baseAngle = Math.atan2(leader.y - supportAttackTarget.y, leader.x - supportAttackTarget.x);
+          let flankAngle;
+          if (totalSupporters === 1) {
+            // Single supporter: opposite side from leader
+            flankAngle = baseAngle + Math.PI;
+          } else {
+            // Multiple supporters: spread around the target
+            const angleSpread = Math.PI * 1.5; // 270 degrees spread
+            const angleStep = angleSpread / (totalSupporters + 1);
+            flankAngle = baseAngle + Math.PI - (angleSpread / 2) + angleStep * (supporterIndex + 1);
+          }
+          const flankDistance = 80 + (tad.radius || 8); // Distance from target
 
           const idealX = supportAttackTarget.x + Math.cos(flankAngle) * flankDistance;
           const idealY = supportAttackTarget.y + Math.sin(flankAngle) * flankDistance;
@@ -4899,44 +4951,43 @@ function update(deltaTime = 1) {
           const idealDistY = idealY - tad.y;
           const distToIdeal = Math.sqrt(idealDistX * idealDistX + idealDistY * idealDistY);
 
-          if (distToIdeal > 20) {
+          if (distToIdeal > 15) {
             supportMoveTarget = { x: idealX, y: idealY };
           }
-        } else {
-          // When following: intelligently avoid bumping into leader
-          // Calculate leader's velocity to predict movement
+        } else if (!supportMoveTarget) {
+          // When following: arrange supporters in formation around leader
+          // Calculate leader's facing direction
           const leaderSpeed = Math.sqrt(leader.vx * leader.vx + leader.vy * leader.vy);
-
-          // Calculate ideal position: behind leader based on leader's movement direction
           let leaderAngle = leader.angle || 0;
           if (leaderSpeed > 0.1) {
-            // Use velocity direction if leader is moving
             leaderAngle = Math.atan2(leader.vy, leader.vx);
           }
 
-          // If too close to leader, move to the side to avoid collision
-          if (leaderDist < minDistance) {
-            // Move perpendicular to leader's movement to get out of the way
-            const perpendicularAngle = leaderAngle + Math.PI / 2;
-            const avoidDistance = minDistance + 30;
-            const avoidX = leader.x + Math.cos(perpendicularAngle) * avoidDistance;
-            const avoidY = leader.y + Math.sin(perpendicularAngle) * avoidDistance;
-            supportMoveTarget = { x: avoidX, y: avoidY };
+          // Calculate unique position for each supporter
+          const formationRadius = 80 + (tad.radius || 8) + (leader.radius || 8); // Distance from leader
+          let formationAngle;
+
+          if (totalSupporters === 1) {
+            // Single supporter: behind and slightly to the right
+            formationAngle = leaderAngle + Math.PI + (Math.PI / 6);
           } else {
-            // Normal follow position: behind and to the side
-            const offsetAngle = leaderAngle + Math.PI + (Math.PI / 6); // Behind and slightly to side
-            const idealDistance = 120; // Comfortable follow distance
-            const idealX = leader.x + Math.cos(offsetAngle) * idealDistance;
-            const idealY = leader.y + Math.sin(offsetAngle) * idealDistance;
+            // Multiple supporters: spread in an arc behind the leader
+            const arcSpread = Math.PI * 0.8; // 144 degrees arc behind leader
+            const arcStart = leaderAngle + Math.PI - (arcSpread / 2);
+            const angleStep = arcSpread / (totalSupporters - 1 || 1);
+            formationAngle = arcStart + angleStep * supporterIndex;
+          }
 
-            // Move toward ideal position if too far from it
-            const idealDistX = idealX - tad.x;
-            const idealDistY = idealY - tad.y;
-            const distToIdeal = Math.sqrt(idealDistX * idealDistX + idealDistY * idealDistY);
+          const idealX = leader.x + Math.cos(formationAngle) * formationRadius;
+          const idealY = leader.y + Math.sin(formationAngle) * formationRadius;
 
-            if (distToIdeal > 20) {
-              supportMoveTarget = { x: idealX, y: idealY };
-            }
+          const idealDistX = idealX - tad.x;
+          const idealDistY = idealY - tad.y;
+          const distToIdeal = Math.sqrt(idealDistX * idealDistX + idealDistY * idealDistY);
+
+          // Only move if far enough from ideal position (prevents jitter)
+          if (distToIdeal > 15) {
+            supportMoveTarget = { x: idealX, y: idealY };
           }
         }
       } else {
