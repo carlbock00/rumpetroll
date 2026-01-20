@@ -4108,7 +4108,11 @@ function updateUpgradeMenu() {
       const myResearchedLevel = maxResearchedLevel[techData.type] || 0;
       const levelsAhead = techData.level - myResearchedLevel;
       let isFogged = false;
-      if (isLocked && !isBranchLocked) {
+
+      // Branch-locked nodes should ALWAYS be fogged (blurred) - you chose a different path
+      if (isBranchLocked) {
+        isFogged = true;
+      } else if (isLocked) {
         if (levelsAhead >= 2) {
           // 2+ levels ahead in same type = fog
           isFogged = true;
