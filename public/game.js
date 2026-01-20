@@ -244,7 +244,10 @@ async function saveProgressToServer() {
       hasSword: tad.hasSword || false,
       canHibernate: tad.canHibernate || false,
       // Bacteria-specific
-      isFarming: tad.isFarming || false
+      isFarming: tad.isFarming || false,
+      // Support relationships - store leader as index for persistence across sessions
+      supportMode: tad.supportMode || false,
+      supportLeaderIndex: tad.supportLeader ? myTadpoles.findIndex(t => t.id === tad.supportLeader) : -1
     }));
 
     // Calculate highest evolution
@@ -350,7 +353,10 @@ function loadProgressFromServer(progress) {
       hasSword: savedTad.hasSword || false,
       canHibernate: savedTad.canHibernate || false,
       // Bacteria-specific
-      isFarming: savedTad.isFarming || false
+      isFarming: savedTad.isFarming || false,
+      // Support relationships - store index temporarily, will convert to ID after all creatures loaded
+      supportMode: savedTad.supportMode || false,
+      supportLeaderIndex: savedTad.supportLeaderIndex !== undefined ? savedTad.supportLeaderIndex : -1
     };
 
     // Initialize type-specific properties
@@ -365,6 +371,20 @@ function loadProgressFromServer(progress) {
     if (index === 0) {
       selectedTadpoles.add(tad.id);
     }
+  });
+
+  // Restore support relationships by converting indices to new IDs
+  myTadpoles.forEach(tad => {
+    if (tad.supportMode && tad.supportLeaderIndex >= 0 && tad.supportLeaderIndex < myTadpoles.length) {
+      tad.supportLeader = myTadpoles[tad.supportLeaderIndex].id;
+    } else {
+      tad.supportLeader = null;
+      // If no valid leader, disable support mode
+      if (tad.supportMode && tad.supportLeaderIndex >= 0) {
+        tad.supportMode = false;
+      }
+    }
+    delete tad.supportLeaderIndex; // Clean up temporary property
   });
 
   updateSelectionCount();
@@ -505,7 +525,10 @@ function syncCreaturesToServer() {
       hasSword: tad.hasSword || false,
       hasCellTail: tad.hasCellTail || false,
       canHibernate: tad.canHibernate || false,
-      isFarming: tad.isFarming || false
+      isFarming: tad.isFarming || false,
+      // Support relationships - store leader as index for persistence across sessions
+      supportMode: tad.supportMode || false,
+      supportLeaderIndex: tad.supportLeader ? myTadpoles.findIndex(t => t.id === tad.supportLeader) : -1
     }));
     socket.emit('syncCreatures', { creatures });
   }
@@ -3501,7 +3524,9 @@ window.addEventListener('beforeunload', () => {
       hasSword: tad.hasSword || false,
       hasCellTail: tad.hasCellTail || false,
       canHibernate: tad.canHibernate || false,
-      isFarming: tad.isFarming || false
+      isFarming: tad.isFarming || false,
+      supportMode: tad.supportMode || false,
+      supportLeaderIndex: tad.supportLeader ? myTadpoles.findIndex(t => t.id === tad.supportLeader) : -1
     }));
     // Try to send via WebSocket (may not complete before page unloads)
     socket.emit('syncCreatures', { creatures });
@@ -3532,7 +3557,10 @@ window.addEventListener('beforeunload', () => {
     hasProtector: tad.hasProtector || false,
     hasSword: tad.hasSword || false,
     canHibernate: tad.canHibernate || false,
-    bubbleShieldActive: tad.bubbleShieldActive || false
+    bubbleShieldActive: tad.bubbleShieldActive || false,
+    isFarming: tad.isFarming || false,
+    supportMode: tad.supportMode || false,
+    supportLeaderIndex: tad.supportLeader ? myTadpoles.findIndex(t => t.id === tad.supportLeader) : -1
   }));
 
   let highestEvolution = 'tadpole';
