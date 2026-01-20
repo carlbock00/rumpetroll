@@ -4818,6 +4818,44 @@ function update(deltaTime = 1) {
           }
         }
 
+        // DEFENSIVE: If something is attacking the leader, defend them!
+        // Check NPCs that are targeting/attacking the leader
+        if (!supportAttackTarget) {
+          for (let npc of Object.values(npcs)) {
+            if (npc.health <= 0) continue;
+            if (npc.isIdlePlayer) continue; // Idle players don't attack
+
+            // Check if NPC is close to leader and aggressive (provoked or chasing)
+            const distX = leader.x - npc.x;
+            const distY = leader.y - npc.y;
+            const distance = Math.sqrt(distX * distX + distY * distY);
+
+            // If NPC is within threat range and seems to be targeting the leader
+            const THREAT_RANGE = 200; // Larger range for defensive awareness
+            if (distance < THREAT_RANGE && npc.provoked) {
+              supportAttackTarget = npc;
+              break;
+            }
+          }
+        }
+
+        // Check if other players are attacking the leader (recently hit them)
+        if (!supportAttackTarget && leader.lastHit && Date.now() - leader.lastHit < 3000) {
+          // Leader was recently hit - find the attacker
+          for (let player of Object.values(players)) {
+            if (player.health <= 0) continue;
+            const distX = leader.x - player.x;
+            const distY = leader.y - player.y;
+            const distance = Math.sqrt(distX * distX + distY * distY);
+
+            // If player is close enough to have attacked the leader
+            if (distance < ATTACK_RANGE * 2) {
+              supportAttackTarget = player;
+              break;
+            }
+          }
+        }
+
         // Intelligent positioning based on situation
         if (supportAttackTarget) {
           // When attacking: flank the target for better angle
