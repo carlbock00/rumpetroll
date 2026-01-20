@@ -1283,8 +1283,9 @@ socket.on('disconnect', () => {
 // Restore explored regions when logging in
 socket.on('restoreExploredRegions', (data) => {
   if (data.regions && Array.isArray(data.regions)) {
-    console.log(`Restoring ${data.regions.length} explored regions`);
+    console.log(`[MAP] Restoring ${data.regions.length} explored regions from server`);
     data.regions.forEach(region => exploredRegions.add(region));
+    console.log(`[MAP] Total explored regions now: ${exploredRegions.size}`);
   }
 });
 
@@ -6119,6 +6120,11 @@ function update(deltaTime = 1) {
 
     // Sync explored regions less frequently (every 5 seconds)
     if (currentUser && exploredRegions.size > 0 && (!update.lastExploredSync || Date.now() - update.lastExploredSync > 5000)) {
+      // Debug: log once per minute
+      if (!update.lastExploredLog || Date.now() - update.lastExploredLog > 60000) {
+        console.log(`[MAP] Syncing ${exploredRegions.size} explored regions to server`);
+        update.lastExploredLog = Date.now();
+      }
       socket.emit('syncExploredRegions', {
         regions: Array.from(exploredRegions)
       });

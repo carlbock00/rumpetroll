@@ -1748,7 +1748,10 @@ io.on('connection', (socket) => {
   // Handle explored regions sync (fog of war persistence)
   socket.on('syncExploredRegions', (data) => {
     const username = socketToUser[socket.id];
-    if (!username || !data.regions) return;
+    if (!username || !data.regions) {
+      console.log(`syncExploredRegions: skipped - username=${username}, hasRegions=${!!data.regions}`);
+      return;
+    }
 
     // Store explored regions for this user (limit to prevent abuse)
     const MAX_EXPLORED_REGIONS = 10000; // Reasonable limit
@@ -1759,6 +1762,12 @@ io.on('connection', (socket) => {
       userPositions[username] = {};
     }
     userPositions[username].exploredRegions = regions;
+
+    // Debug: log periodically (every 30 seconds per user)
+    if (!socket._lastExploredLog || Date.now() - socket._lastExploredLog > 30000) {
+      console.log(`Saved ${regions.length} explored regions for ${username}`);
+      socket._lastExploredLog = Date.now();
+    }
   });
 
   // Handle player name change (simplified - connection handler does restoration for logged-in users)
@@ -2080,6 +2089,14 @@ io.on('connection', (socket) => {
         }
         userSockets[cleanName].add(socket.id);
         socketToUser[socket.id] = cleanName;
+
+        // Restore explored regions for this user (in case they weren't sent on connection)
+        if (userPositions[cleanName]?.exploredRegions) {
+          socket.emit('restoreExploredRegions', {
+            regions: userPositions[cleanName].exploredRegions
+          });
+          console.log(`setName: Restored ${userPositions[cleanName].exploredRegions.length} explored regions for ${cleanName}`);
+        }
       }
 
       io.emit('playerUpdated', players[socket.id]);
