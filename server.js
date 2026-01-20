@@ -228,21 +228,12 @@ function isEntityProtectedByShield(entityX, entityY) {
   for (let protectorId in players) {
     const protector = players[protectorId];
     if (!protector) continue;
+
+    // Check primary creature's shield
     if (protector.hasProtector && protector.bubbleShieldActive) {
       let shieldX = protector.x;
       let shieldY = protector.y;
-      let cellRadius = 40;
-
-      if (protector.type === 'cell') {
-        cellRadius = protector.radius || 40;
-      } else if (protector.creatures) {
-        const protectorCell = protector.creatures.find(c => c.type === 'cell' && c.hasProtector);
-        if (protectorCell && protectorCell.x !== undefined) {
-          shieldX = protectorCell.x;
-          shieldY = protectorCell.y;
-          cellRadius = protectorCell.radius || 40;
-        }
-      }
+      let cellRadius = protector.radius || 40;
 
       const shieldRadius = cellRadius * 12;
       const dx = entityX - shieldX;
@@ -250,6 +241,21 @@ function isEntityProtectedByShield(entityX, entityY) {
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist < shieldRadius) {
         return true;
+      }
+    }
+
+    // Also check secondary creatures for active shields
+    if (protector.creatures && protector.creatures.length > 0) {
+      for (const creature of protector.creatures) {
+        if (creature.hasProtector && creature.bubbleShieldActive && creature.x !== undefined) {
+          const shieldRadius = (creature.radius || 40) * 12;
+          const dx = entityX - creature.x;
+          const dy = entityY - creature.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < shieldRadius) {
+            return true;
+          }
+        }
       }
     }
   }
@@ -366,34 +372,36 @@ function updateNPC(npc) {
     for (let protectorId in players) {
       const protector = players[protectorId];
       if (!protector) continue;
+
+      // Check primary creature's shield
       if (protector.hasProtector && protector.bubbleShieldActive) {
-        // Find the protector cell's position and radius (could be primary or secondary creature)
-        let shieldX = protector.x;
-        let shieldY = protector.y;
-        let cellRadius = 40; // Default cell radius
-
-        // If protector's primary is a cell, use its position and radius
-        if (protector.type === 'cell') {
-          cellRadius = protector.radius || 40;
-        } else if (protector.creatures) {
-          // Primary isn't a cell - find the protector cell among secondary creatures
-          const protectorCell = protector.creatures.find(c => c.type === 'cell' && c.hasProtector);
-          if (protectorCell && protectorCell.x !== undefined) {
-            shieldX = protectorCell.x;
-            shieldY = protectorCell.y;
-            cellRadius = protectorCell.radius || 40;
-          }
-        }
-
+        const cellRadius = protector.radius || 40;
         const shieldRadius = cellRadius * 12;
-        const shieldDx = targetX - shieldX;
-        const shieldDy = targetY - shieldY;
+        const shieldDx = targetX - protector.x;
+        const shieldDy = targetY - protector.y;
         const shieldDist = Math.sqrt(shieldDx * shieldDx + shieldDy * shieldDy);
         if (shieldDist < shieldRadius) {
           isProtectedByShield = true;
           break;
         }
       }
+
+      // Also check secondary creatures for active shields
+      if (!isProtectedByShield && protector.creatures && protector.creatures.length > 0) {
+        for (const creature of protector.creatures) {
+          if (creature.hasProtector && creature.bubbleShieldActive && creature.x !== undefined) {
+            const shieldRadius = (creature.radius || 40) * 12;
+            const shieldDx = targetX - creature.x;
+            const shieldDy = targetY - creature.y;
+            const shieldDist = Math.sqrt(shieldDx * shieldDx + shieldDy * shieldDy);
+            if (shieldDist < shieldRadius) {
+              isProtectedByShield = true;
+              break;
+            }
+          }
+        }
+      }
+      if (isProtectedByShield) break;
     }
 
     // For NPC cells: if target is shielded, don't chase or attack - skip this player entirely
