@@ -1849,9 +1849,15 @@ socket.on('playerUpdated', (player) => {
 // Server authoritative state update - sync all player state continuously
 socket.on('playerStateUpdate', (playerStates) => {
   for (let playerId in playerStates) {
-    // For PRIMARY windows: skip our own player - we're the source of truth
-    // For SECONDARY windows: sync our own player from server (primary window controls)
-    if (playerId === myId) {
+    const state = playerStates[playerId];
+
+    // Skip our own player by ID or by username
+    // This prevents seeing a flashing "other player view" of yourself
+    const isOwnById = playerId === myId;
+    const isOwnByName = currentUser && state.name === currentUser.username;
+
+    if (isOwnById || isOwnByName) {
+      // For PRIMARY windows: skip entirely - we're the source of truth
       if (!isSecondaryWindow) continue;
 
       // Secondary window: sync all creatures from server state
@@ -1901,8 +1907,6 @@ socket.on('playerStateUpdate', (playerStates) => {
       }
       continue;
     }
-
-    const state = playerStates[playerId];
 
     // IMPORTANT: If this player exists in server state, clean up any orphaned NPCs for them
     // This prevents the bug where both NPCs and player.creatures exist simultaneously
@@ -2053,8 +2057,12 @@ socket.on('npcs', (serverNpcs) => {
   npcs = {};
   Object.values(serverNpcs).forEach(npcData => {
     // Skip the current user's own idle NPCs (they should have been deleted, but just in case)
-    if (npcData.isIdlePlayer && currentUser &&
-        (npcData.name === currentUser.username || npcData.ownerName === currentUser.username)) {
+    // Check by ID first (more reliable), then by name
+    const isOwnNpcById = myId && (npcData.id === myId || npcData.id.startsWith(`${myId}_creature_`));
+    const isOwnNpcByName = npcData.isIdlePlayer && currentUser &&
+        (npcData.name === currentUser.username || npcData.ownerName === currentUser.username);
+
+    if (isOwnNpcById || isOwnNpcByName) {
       return;
     }
 
@@ -2083,9 +2091,13 @@ socket.on('npcs', (serverNpcs) => {
 socket.on('npcUpdate', (serverNpcs) => {
   // Continuous NPC state updates from server
   Object.values(serverNpcs).forEach(serverNpc => {
-    // Always skip the current user's own idle NPCs
-    if (serverNpc.isIdlePlayer && currentUser &&
-        (serverNpc.name === currentUser.username || serverNpc.ownerName === currentUser.username)) {
+    // Always skip the current user's own idle NPCs - check by ID first (more reliable)
+    // This prevents flashing inactive versions of yourself
+    const isOwnNpcById = myId && (serverNpc.id === myId || serverNpc.id.startsWith(`${myId}_creature_`));
+    const isOwnNpcByName = serverNpc.isIdlePlayer && currentUser &&
+        (serverNpc.name === currentUser.username || serverNpc.ownerName === currentUser.username);
+
+    if (isOwnNpcById || isOwnNpcByName) {
       // If it somehow got added, remove it
       if (npcs[serverNpc.id]) {
         delete npcs[serverNpc.id];
@@ -2138,8 +2150,11 @@ socket.on('npcUpdate', (serverNpcs) => {
     } else {
       // New NPC - add it (but skip if it's the current user's idle self)
       // This prevents race conditions where old npcUpdate messages re-add deleted idle NPCs
-      if (serverNpc.isIdlePlayer && currentUser &&
-          (serverNpc.name === currentUser.username || serverNpc.ownerName === currentUser.username)) {
+      const isOwnNpcById = myId && (serverNpc.id === myId || serverNpc.id.startsWith(`${myId}_creature_`));
+      const isOwnNpcByName = serverNpc.isIdlePlayer && currentUser &&
+          (serverNpc.name === currentUser.username || serverNpc.ownerName === currentUser.username);
+
+      if (isOwnNpcById || isOwnNpcByName) {
         // Skip - this is the current user's idle NPC that should have been deleted
         return;
       }
@@ -4630,6 +4645,18 @@ function update(deltaTime = 1) {
         console.error(`[BUG FIX] Removing duplicate player with our username: ${playerId}`);
         delete players[playerId];
       }
+    }
+  }
+
+  // CRITICAL: Remove our own idle NPCs that may have slipped through
+  // This prevents flashing inactive versions of yourself
+  for (let npcId in npcs) {
+    const npc = npcs[npcId];
+    const isOwnById = myId && (npcId === myId || npcId.startsWith(`${myId}_creature_`));
+    const isOwnByName = npc.isIdlePlayer && currentUser &&
+        (npc.name === currentUser.username || npc.ownerName === currentUser.username);
+    if (isOwnById || isOwnByName) {
+      delete npcs[npcId];
     }
   }
 
