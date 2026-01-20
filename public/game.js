@@ -1616,6 +1616,27 @@ socket.on('init', async (data) => {
     isSecondaryWindow = true;
     // Use the player's name from server data
     player.name = player.name || currentUser?.username || 'Player';
+
+    // Show visual indicator that this is a secondary (view-only) window
+    const viewOnlyBanner = document.createElement('div');
+    viewOnlyBanner.id = 'view-only-banner';
+    viewOnlyBanner.innerHTML = 'VIEW ONLY - Control from other window';
+    viewOnlyBanner.style.cssText = `
+      position: fixed;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255, 165, 0, 0.9);
+      color: #000;
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+      font-weight: bold;
+      z-index: 10000;
+      pointer-events: none;
+    `;
+    document.body.appendChild(viewOnlyBanner);
   }
 
   initializeTadpole(player);
@@ -1778,16 +1799,25 @@ socket.on('playerActive', (data) => {
 
 socket.on('playerMoved', (data) => {
   // If this is our own player (multi-window: another window moved it), sync to myTadpoles
-  if (data.id === myId && myTadpoles.length > 0) {
-    // Another window controlling our tadpole - sync position
-    myTadpoles.forEach(tad => {
-      tad.x = data.x;
-      tad.y = data.y;
-      tad.vx = data.vx;
-      tad.vy = data.vy;
-      tad.renderX = data.x;
-      tad.renderY = data.y;
-    });
+  // Only do immediate sync for secondary windows - primary windows control locally
+  if (data.id === myId && isSecondaryWindow && myTadpoles.length > 0) {
+    // Only sync primary creature position from playerMoved
+    // Full creature sync happens via playerStateUpdate
+    const primaryTad = myTadpoles[0];
+    if (primaryTad) {
+      const dx = data.x - primaryTad.x;
+      const dy = data.y - primaryTad.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > 200) {
+        // Teleport if too far
+        primaryTad.x = data.x;
+        primaryTad.y = data.y;
+        primaryTad.renderX = data.x;
+        primaryTad.renderY = data.y;
+      }
+      primaryTad.vx = data.vx;
+      primaryTad.vy = data.vy;
+    }
     return;
   }
 
@@ -1811,8 +1841,58 @@ socket.on('playerUpdated', (player) => {
 // Server authoritative state update - sync all player state continuously
 socket.on('playerStateUpdate', (playerStates) => {
   for (let playerId in playerStates) {
-    // Skip our own player - we're the source of truth for ourselves
-    if (playerId === myId) continue;
+    // For PRIMARY windows: skip our own player - we're the source of truth
+    // For SECONDARY windows: sync our own player from server (primary window controls)
+    if (playerId === myId) {
+      if (!isSecondaryWindow) continue;
+
+      // Secondary window: sync all creatures from server state
+      const state = playerStates[playerId];
+      if (state.creatures && state.creatures.length > 0) {
+        // Update each creature's position and state
+        state.creatures.forEach((serverCreature, index) => {
+          let localTad = myTadpoles.find(t => t.id === serverCreature.id);
+          if (!localTad && index < myTadpoles.length) {
+            // Fallback: match by index if IDs don't match
+            localTad = myTadpoles[index];
+          }
+          if (localTad) {
+            // Smooth interpolation for position
+            const dx = serverCreature.x - localTad.x;
+            const dy = serverCreature.y - localTad.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist > 200) {
+              // Teleport if too far
+              localTad.x = serverCreature.x;
+              localTad.y = serverCreature.y;
+              localTad.renderX = serverCreature.x;
+              localTad.renderY = serverCreature.y;
+            } else {
+              // Smooth interpolation
+              localTad.x += dx * 0.3;
+              localTad.y += dy * 0.3;
+            }
+            localTad.vx = serverCreature.vx || 0;
+            localTad.vy = serverCreature.vy || 0;
+            localTad.angle = serverCreature.angle || localTad.angle;
+            localTad.health = serverCreature.health;
+            localTad.maxHealth = serverCreature.maxHealth;
+            localTad.type = serverCreature.type || localTad.type;
+          }
+        });
+
+        // Sync primary tadpole state too
+        if (myTadpoles[0] && state) {
+          myTadpoles[0].food = state.food || 0;
+          myTadpoles[0].nucleotides = state.nucleotides || 0;
+          myTadpoles[0].hasProtector = state.hasProtector;
+          myTadpoles[0].hasSword = state.hasSword;
+          myTadpoles[0].hasCellTail = state.hasCellTail;
+          myTadpoles[0].bubbleShieldActive = state.bubbleShieldActive;
+        }
+      }
+      continue;
+    }
 
     const state = playerStates[playerId];
 
@@ -3196,6 +3276,15 @@ canvas.addEventListener('contextmenu', (e) => {
 
 // Keyboard controls
 document.addEventListener('keydown', (e) => {
+  // Secondary windows are view-only - block movement keys
+  if (isSecondaryWindow) {
+    const movementKeys = ['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd'];
+    if (movementKeys.includes(e.key.toLowerCase())) {
+      e.preventDefault();
+      return;
+    }
+  }
+
   keys[e.key.toLowerCase()] = true;
   if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(e.key.toLowerCase())) {
     e.preventDefault();
@@ -4654,6 +4743,22 @@ function update(deltaTime = 1) {
 
   // Update player tadpoles
   for (let tad of myTadpoles) {
+    // SECONDARY WINDOW: Skip all local movement calculation
+    // Position is synced from server via playerStateUpdate
+    if (isSecondaryWindow) {
+      // Still update render position for smooth display
+      if (tad.renderX === undefined) tad.renderX = tad.x;
+      if (tad.renderY === undefined) tad.renderY = tad.y;
+      tad.renderX += (tad.x - tad.renderX) * 0.3;
+      tad.renderY += (tad.y - tad.renderY) * 0.3;
+
+      // Update tail animation
+      if (tad.type === 'tadpole') {
+        updateTail(tad, time);
+      }
+      continue; // Skip all movement/input handling
+    }
+
     let dx = 0;
     let dy = 0;
 

@@ -1670,6 +1670,25 @@ io.on('connection', (socket) => {
         vx: data.vx,
         vy: data.vy
       });
+
+      // Also send to other windows of the same user (multi-window sync)
+      const username = socketToUser[socket.id];
+      if (username && userSockets[username]) {
+        for (const otherSocketId of userSockets[username]) {
+          if (otherSocketId !== socket.id) {
+            const otherSocket = io.sockets.sockets.get(otherSocketId);
+            if (otherSocket) {
+              otherSocket.emit('playerMoved', {
+                id: targetPlayerId,
+                x: data.x,
+                y: data.y,
+                vx: data.vx,
+                vy: data.vy
+              });
+            }
+          }
+        }
+      }
     }
   });
 
